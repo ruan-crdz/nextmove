@@ -5,10 +5,11 @@ import { supabase } from '../lib/supabase'
 type AuthDialogProps = {
   onClose: () => void
   canClose?: boolean
+  initialMode?: 'login' | 'signup'
 }
 
-export function AuthDialog({ onClose, canClose = true }: AuthDialogProps) {
-  const [mode, setMode] = useState<'login' | 'signup'>('signup')
+export function AuthDialog({ onClose, canClose = true, initialMode = 'signup' }: AuthDialogProps) {
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
@@ -32,7 +33,7 @@ export function AuthDialog({ onClose, canClose = true }: AuthDialogProps) {
       return
     }
     if (mode === 'signup' && !result.data.session) {
-      setMessage('Confira seu email para confirmar a conta e depois entre.')
+      setMessage('Conta criada. Entre com seu email e senha para continuar.')
       return
     }
     onClose()

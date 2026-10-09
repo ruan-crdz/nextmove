@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowDownWideNarrow, ArrowRight, Bell, Bookmark, BriefcaseBusiness, Check, ChevronDown, CircleHelp, Clock3, Command, Compass, FileText, Filter, Flame, Globe2, KeyRound, Layers3, Link2, MapPin, MoreHorizontal, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { demoJobs, mapStoredJob, type Job } from './domain/jobs'
 import { AuthDialog } from './components/AuthDialog'
+import { WelcomePage } from './components/WelcomePage'
 import { supabase } from './lib/supabase'
 import './components/auth.css'
 
@@ -18,6 +19,8 @@ function App() {
   const [search, setSearch] = useState('')
   const [toast, setToast] = useState('')
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [authLoading, setAuthLoading] = useState(configured)
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup')
   const [authOpen, setAuthOpen] = useState(false)
   const [liveJobs, setLiveJobs] = useState<Job[]>([])
   const [analyzing, setAnalyzing] = useState(false)
@@ -25,9 +28,13 @@ function App() {
   useEffect(() => {
     if (!supabase || demoMode) return
     let active = true
-    supabase.auth.getSession().then(({ data }) => { if (active) setUserEmail(data.session?.user.email ?? null) })
+    supabase.auth.getSession()
+      .then(({ data }) => { if (active) setUserEmail(data.session?.user.email ?? null) })
+      .catch(() => { if (active) setUserEmail(null) })
+      .finally(() => { if (active) setAuthLoading(false) })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user.email ?? null)
+      setAuthLoading(false)
       if (!session) setLiveJobs([])
     })
     return () => { active = false; subscription.unsubscribe() }
@@ -169,6 +176,17 @@ function App() {
     { label: 'Candidaturas', icon: BriefcaseBusiness }, { label: 'Currículo', icon: FileText },
   ]
 
+  if (configured && !userEmail) {
+    return <>
+      <WelcomePage
+        loading={authLoading}
+        onSignUp={() => { setAuthMode('signup'); setAuthOpen(true) }}
+        onLogIn={() => { setAuthMode('login'); setAuthOpen(true) }}
+      />
+      {authOpen && !authLoading && <AuthDialog initialMode={authMode} onClose={() => setAuthOpen(false)} />}
+    </>
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -195,20 +213,17 @@ function App() {
         <aside className="left-rail">
           <section className="profile-block">
             <div className="profile-cover"><span className="cover-sun" /><span className="cover-line" /></div>
-            <div className="profile-avatar">AM</div>
-            <div className="profile-info"><strong>Alex Martins</strong><span>Engenheiro de software</span></div>
-            <div className="profile-progress"><div className="progress-copy"><span>Perfil profissional</span><strong>72%</strong></div><div className="progress-track"><span style={{ width: '72%' }} /></div><button onClick={() => setView('Currículo')}>Completar perfil <ArrowRight size={14} /></button></div>
+            <div className="profile-avatar">{userEmail?.[0]?.toUpperCase() ?? 'NM'}</div>
+            <div className="profile-info"><strong>{userEmail ? userEmail.split('@')[0] : 'Seu perfil'}</strong><span>{userEmail ? 'Perfil profissional' : 'Exemplo de demonstração'}</span></div>
+            <div className="profile-progress"><div className="progress-copy"><span>Perfil profissional</span><strong>{userEmail ? '0%' : 'Demo'}</strong></div><div className="progress-track"><span style={{ width: userEmail ? '0%' : '100%' }} /></div><button onClick={() => setView('Currículo')}>{userEmail ? 'Configuração de perfil em breve' : 'Ver perfil de exemplo'} <ArrowRight size={14} /></button></div>
           </section>
           <section className="rail-section search-preferences">
             <div className="rail-title">SUA BUSCA <button aria-label="Editar preferências"><Settings2 size={15} /></button></div>
-            <div className="preference-row"><BriefcaseBusiness size={15} /><span>Frontend · Product Eng.</span></div>
-            <div className="preference-row"><MapPin size={15} /><span>Brasil · Remoto</span></div>
-            <div className="preference-row"><Layers3 size={15} /><span>Pleno · Sênior</span></div>
-            <button className="text-action" onClick={() => setToast('Preferências disponíveis após configurar seu perfil')}>Editar preferências <ArrowRight size={14} /></button>
+            {userEmail ? <><div className="preference-row"><BriefcaseBusiness size={15} /><span>Preferências ainda não configuradas</span></div><button className="text-action" onClick={() => setToast('A configuração de preferências estará disponível em breve')}>Configurar busca <ArrowRight size={14} /></button></> : <><div className="preference-row"><BriefcaseBusiness size={15} /><span>Frontend · Product Eng. (exemplo)</span></div><div className="preference-row"><MapPin size={15} /><span>Brasil · Remoto (exemplo)</span></div><div className="preference-row"><Layers3 size={15} /><span>Pleno · Sênior (exemplo)</span></div></>}
           </section>
           <section className="rail-section saved-section">
             <div className="rail-title">ATALHOS</div>
-            <button className="shortcut" onClick={() => setView('Candidaturas')}><Bookmark size={16} /> Vagas salvas <span>4</span></button>
+            <button className="shortcut" onClick={() => setView('Candidaturas')}><Bookmark size={16} /> Vagas salvas <span>{userEmail ? queue.length : 4}</span></button>
             <button className="shortcut" onClick={() => setView('Fila')}><Clock3 size={16} /> Atividade recente</button>
           </section>
           <div className="rail-bottom"><ShieldCheck size={15} /><span>Suas informações ficam privadas</span><button aria-label="Saiba mais"><CircleHelp size={15} /></button></div>
@@ -227,7 +242,7 @@ function App() {
           </>}
           {view === 'Fila' && <QueueView jobs={queue} onDetails={setSelectedJob} onStart={startQueue} />}
           {view === 'Candidaturas' && <div className="empty-workspace"><div className="empty-icon"><BriefcaseBusiness size={24} /></div><h2>Suas candidaturas começam aqui</h2><p>Salve uma vaga ou adicione um link para organizar suas próximas oportunidades.</p><button className="primary-button" onClick={() => setView('Vagas')}>Explorar vagas <ArrowRight size={16} /></button></div>}
-          {view === 'Currículo' && <ProfileView onBack={() => setView('Vagas')} />}
+          {view === 'Currículo' && <ProfileView userEmail={userEmail} onBack={() => setView('Vagas')} />}
         </section>
 
         <aside className="right-rail">
@@ -236,7 +251,7 @@ function App() {
             {queue.length ? <div className="mini-queue">{queue.slice(0, 3).map((job) => <QueueMiniItem key={job.id} job={job} />)}</div> : <p className="queue-empty">Quando adicionar uma vaga, ela aparece aqui.</p>}
             {queue.length > 0 && <button className="queue-link" onClick={() => setView('Fila')}>Ver fila completa <ArrowRight size={14} /></button>}
           </section>
-          <section className="insight-panel"><div className="insight-top"><span className="insight-icon"><Flame size={16} /></span><span>UM BOM COMEÇO</span></div><h3>Seu perfil já tem pontos fortes para mostrar.</h3><p>TypeScript, React e experiência de produto aparecem em <strong>3 vagas</strong> desta seleção.</p><button onClick={() => setView('Currículo')}>Ver meu perfil <ArrowRight size={14} /></button><span className="insight-decoration" /></section>
+          {!userEmail && <section className="insight-panel"><div className="insight-top"><span className="insight-icon"><Flame size={16} /></span><span>UM BOM COMEÇO · DEMO</span></div><h3>Compare oportunidades com mais contexto.</h3><p>Na demonstração, explore exemplos de competências, pontos em comum e lacunas.</p><button onClick={() => setView('Currículo')}>Ver exemplo <ArrowRight size={14} /></button><span className="insight-decoration" /></section>}
           <section className="link-panel"><Globe2 size={16} /><div><strong>Vagas de fontes públicas</strong><p>Preservamos o link original e priorizamos páginas oficiais para candidatura.</p></div></section>
           <footer className="right-footer"><span>Sobre</span><span>Privacidade</span><span>Ajuda</span><small>© 2026 NextMove</small></footer>
         </aside>
@@ -267,8 +282,9 @@ function QueueView({ jobs, onDetails, onStart }: { jobs: Job[]; onDetails: (job:
   return <div className="queue-page"><div className="queue-summary"><div><span className="summary-caption">CANDIDATURAS SELECIONADAS</span><strong>{jobs.length}</strong><span>na sua fila</span></div><div className="summary-estimate"><Clock3 size={16} /><span>{jobs.some((job) => job.id.match(/^[0-9a-f-]{36}$/i)) ? 'O envio à fila é real; o agente que preencheria candidaturas ainda não está conectado.' : 'Dados de demonstração; nada será enviado.'}</span></div></div>{jobs.length ? <div className="queue-job-list">{jobs.map((job) => <button className="queue-job-row" key={job.id} onClick={() => onDetails(job)}><div className={`company-mark small ${job.accent}`}>{job.initials}</div><div><strong>{job.title}</strong><span>{job.company} · {job.location}</span></div><span className={`queue-status ${job.status === 'applying' ? 'in-progress' : ''}`}><i />{job.status === 'applying' ? 'Na fila de processamento' : 'Salva'}</span><ArrowRight size={16} /></button>)}</div> : <p className="empty-queue">Sua fila está vazia. Adicione uma oportunidade para começar.</p>}<div className="queue-safety"><ShieldCheck size={18} /><div><strong>Você mantém o controle</strong><p>Esta versão não submete candidatura nem responde formulários automaticamente.</p></div></div><button className="primary-button start-queue" disabled={!jobs.length} onClick={onStart}><Send size={15} /> Iniciar {jobs.length} candidatura{jobs.length === 1 ? '' : 's'}</button></div>
 }
 
-function ProfileView({ onBack }: { onBack: () => void }) {
-  return <div className="profile-page"><div className="profile-page-heading"><div className="large-profile-avatar">AM</div><div><span className="summary-caption">PERFIL PROFISSIONAL</span><h2>Alex Martins</h2><p>Engenheiro de software · Brasil</p></div><button className="quiet-button" onClick={onBack}>Voltar às vagas</button></div><div className="profile-page-content"><section><span className="section-kicker">RESUMO</span><p>Desenvolvedor frontend com experiência na construção de interfaces web e produtos digitais. Perfil e informações pessoais de demonstração.</p></section><section><span className="section-kicker">COMPETÊNCIAS COM EVIDÊNCIA</span><div className="skill-tags"><span>React</span><span>TypeScript</span><span>Design systems</span><span>APIs</span></div></section><div className="profile-demo-note"><Sparkles size={16} /> Perfil de exemplo. Importe seu currículo para montar seu perfil real.</div></div></div>
+function ProfileView({ userEmail, onBack }: { userEmail: string | null; onBack: () => void }) {
+  const displayName = userEmail ? userEmail.split('@')[0] : 'Perfil de demonstração'
+  return <div className="profile-page"><div className="profile-page-heading"><div className="large-profile-avatar">{userEmail?.[0]?.toUpperCase() ?? 'NM'}</div><div><span className="summary-caption">PERFIL PROFISSIONAL</span><h2>{displayName}</h2><p>{userEmail ?? 'Dados ilustrativos, não vinculados a uma pessoa real'}</p></div><button className="quiet-button" onClick={onBack}>Voltar às vagas</button></div><div className="profile-page-content"><section><span className="section-kicker">RESUMO</span><p>{userEmail ? 'Seu resumo profissional será exibido quando você preencher seu perfil.' : 'Este perfil é apenas um exemplo visual. Suas informações reais não foram adicionadas.'}</p></section><section><span className="section-kicker">COMPETÊNCIAS DE EXEMPLO</span><div className="skill-tags"><span>React</span><span>TypeScript</span><span>Design systems</span><span>APIs</span></div></section><div className="profile-demo-note"><Sparkles size={16} /> {userEmail ? 'A edição e importação do currículo ainda não estão disponíveis.' : 'Perfil ilustrativo para demonstração.'}</div></div></div>
 }
 
 function JobDetails({ job, queued, onClose, onQueue }: { job: Job; queued: boolean; onClose: () => void; onQueue: () => void }) {
