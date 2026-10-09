@@ -3,6 +3,9 @@ import { ArrowDownWideNarrow, ArrowRight, Bell, Bookmark, BriefcaseBusiness, Che
 import { demoJobs, mapStoredJob, type Job } from './domain/jobs'
 import { AuthDialog } from './components/AuthDialog'
 import { WelcomePage } from './components/WelcomePage'
+import { ResumeImportView } from './components/ResumeImportView'
+import type { ResumeProfile } from './domain/resume'
+import { linkedInJobUrl } from './domain/extensionImport'
 import { supabase } from './lib/supabase'
 import './components/auth.css'
 
@@ -46,17 +49,33 @@ function App() {
     Promise.all([
       supabase.from('jobs').select('*').order('discovered_at', { ascending: false }),
       supabase.from('applications').select('job_id,status').order('created_at', { ascending: false }),
-    ]).then(([jobsResult, applicationsResult]) => {
+      supabase.from('job_matches').select('job_id,overall_score,matched_requirements,missing_requirements,reasoning_summary'),
+    ]).then(([jobsResult, applicationsResult, matchesResult]) => {
       if (!active || jobsResult.error || !jobsResult.data) return
       const applicationStatus = new Map((applicationsResult.data ?? []).map((application) => [application.job_id, application.status]))
+      const matchByJob = new Map((matchesResult.data ?? []).map((match) => [match.job_id, match]))
       setLiveJobs(jobsResult.data.map((record) => mapStoredJob({
         ...record,
         application_status: applicationStatus.get(record.id),
+        match_score: matchByJob.get(record.id)?.overall_score,
+        matched_skills: matchByJob.get(record.id)?.matched_requirements,
+        missing_requirements: matchByJob.get(record.id)?.missing_requirements,
       } as Record<string, unknown>)))
       setQueuedIds([...applicationStatus.keys()])
     })
     return () => { active = false }
   }, [demoMode, userEmail])
+
+  useEffect(() => {
+    if (!configured || !userEmail) return
+    const params = new URLSearchParams(window.location.search)
+    const url = linkedInJobUrl(params.get('jobUrl'))
+    if (!url) return
+    setUrls(url)
+    setView('Vagas')
+    setUrlEntryOpen(true)
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [configured, userEmail])
 
   const sourceJobs = configured && userEmail ? liveJobs : demoJobs
   const queue = useMemo(() => sourceJobs.filter((job) => queuedIds.includes(job.id)), [queuedIds, sourceJobs])
@@ -171,6 +190,28 @@ function App() {
     window.setTimeout(() => setToast(''), 3000)
   }
 
+  async function discoverLinkedInJobs(profile: ResumeProfile) {
+    setView('Vagas')
+    if (!supabase) return
+    setAnalyzing(true)
+    setToast(`Perfil confirmado${profile.headline ? ` para ${profile.headline}` : ''}. Buscando vagas públicas no LinkedIn…`)
+    const { data, error } = await supabase.functions.invoke('discover-linkedin-jobs', { body: {} })
+    setAnalyzing(false)
+    if (error || data?.error) {
+      setToast(data?.error ?? 'Não foi possível buscar vagas agora. Tente novamente pela busca.')
+      window.setTimeout(() => setToast(''), 5000)
+      return
+    }
+    const results = Array.isArray(data?.jobs) ? data.jobs as Record<string, unknown>[] : []
+    setLiveJobs((current) => {
+      const byId = new Map(current.map((job) => [job.id, job]))
+      for (const record of results) byId.set(String(record.id), mapStoredJob(record))
+      return [...byId.values()]
+    })
+    setToast(results.length ? `${results.length} vagas públicas do LinkedIn encontradas` : data?.message ?? 'Nenhuma vaga pública compatível encontrada. Você também pode colar links.')
+    window.setTimeout(() => setToast(''), 5000)
+  }
+
   const navigation: { label: View; icon: typeof Compass }[] = [
     { label: 'Vagas', icon: Compass }, { label: 'Fila', icon: Layers3 },
     { label: 'Candidaturas', icon: BriefcaseBusiness }, { label: 'Currículo', icon: FileText },
@@ -215,7 +256,7 @@ function App() {
             <div className="profile-cover"><span className="cover-sun" /><span className="cover-line" /></div>
             <div className="profile-avatar">{userEmail?.[0]?.toUpperCase() ?? 'NM'}</div>
             <div className="profile-info"><strong>{userEmail ? userEmail.split('@')[0] : 'Seu perfil'}</strong><span>{userEmail ? 'Perfil profissional' : 'Exemplo de demonstração'}</span></div>
-            <div className="profile-progress"><div className="progress-copy"><span>Perfil profissional</span><strong>{userEmail ? '0%' : 'Demo'}</strong></div><div className="progress-track"><span style={{ width: userEmail ? '0%' : '100%' }} /></div><button onClick={() => setView('Currículo')}>{userEmail ? 'Configuração de perfil em breve' : 'Ver perfil de exemplo'} <ArrowRight size={14} /></button></div>
+            <div className="profile-progress"><div className="progress-copy"><span>Perfil profissional</span><strong>{userEmail ? 'A começar' : 'Demo'}</strong></div><div className="progress-track"><span style={{ width: userEmail ? '8%' : '100%' }} /></div><button onClick={() => setView('Currículo')}>{userEmail ? 'Importar currículo' : 'Ver perfil de exemplo'} <ArrowRight size={14} /></button></div>
           </section>
           <section className="rail-section search-preferences">
             <div className="rail-title">SUA BUSCA <button aria-label="Editar preferências"><Settings2 size={15} /></button></div>
@@ -242,7 +283,7 @@ function App() {
           </>}
           {view === 'Fila' && <QueueView jobs={queue} onDetails={setSelectedJob} onStart={startQueue} />}
           {view === 'Candidaturas' && <div className="empty-workspace"><div className="empty-icon"><BriefcaseBusiness size={24} /></div><h2>Suas candidaturas começam aqui</h2><p>Salve uma vaga ou adicione um link para organizar suas próximas oportunidades.</p><button className="primary-button" onClick={() => setView('Vagas')}>Explorar vagas <ArrowRight size={16} /></button></div>}
-          {view === 'Currículo' && <ProfileView userEmail={userEmail} onBack={() => setView('Vagas')} />}
+          {view === 'Currículo' && <ResumeImportView userEmail={userEmail} onBack={() => setView('Vagas')} onProfileConfirmed={(profile) => { void discoverLinkedInJobs(profile) }} />}
         </section>
 
         <aside className="right-rail">
@@ -269,7 +310,7 @@ function App() {
 function JobCard({ job, queued, onQueue, onDetails, style }: { job: Job; queued: boolean; onQueue: () => void; onDetails: () => void; style?: React.CSSProperties }) {
   return <article className="job-card" style={style}>
     <div className={`company-mark ${job.accent}`}>{job.initials}</div>
-    <div className="job-main"><div className="job-topline"><span className="company-name">{job.company}</span><span className="posted-time">{job.posted}</span><button className="job-more" aria-label={`Mais opções para ${job.company}`}><MoreHorizontal size={18} /></button></div><button className="job-title" onClick={onDetails}>{job.title}</button><p className="job-location">{job.location} <span>·</span> {job.workplace} <span>·</span> {job.salary}</p><div className="match-row"><div className="match-score"><span>{job.score}</span><small>%</small></div><strong>Compatibilidade</strong><span className="match-divider" /><span className="match-detail"><Check size={13} /> {job.matched[0]}</span><span className="match-detail"><Check size={13} /> {job.matched[1]}</span></div><div className="gap-note"><span>+</span> {job.gap}</div><div className="job-bottom"><span className="source-label">Origem: <a href={job.sourceUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{job.source} <ArrowRight size={11} /></a></span><div className="job-actions"><button className="detail-button" onClick={onDetails}>Ver vaga</button><button className={`queue-button ${queued ? 'is-queued' : ''}`} onClick={onQueue}>{queued ? <><Check size={15} /> Na fila</> : <><Plus size={15} /> Adicionar à fila</>}</button></div></div></div>
+    <div className="job-main"><div className="job-topline"><span className="company-name">{job.company}</span><span className="posted-time">{job.posted}</span><button className="job-more" aria-label={`Mais opções para ${job.company}`}><MoreHorizontal size={18} /></button></div><button className="job-title" onClick={onDetails}>{job.title}</button><p className="job-location">{job.location} <span>·</span> {job.workplace} <span>·</span> {job.salary}</p><div className="match-row">{job.score > 0 ? <><div className="match-score"><span>{job.score}</span><small>%</small></div><strong>Compatibilidade</strong><span className="match-divider" />{job.matched.slice(0, 2).map((skill) => <span className="match-detail" key={skill}><Check size={13} /> {skill}</span>)}</> : <span className="match-unavailable">Compatibilidade após confirmar seu perfil</span>}</div><div className="gap-note"><span>+</span> {job.gap}</div><div className="job-bottom"><span className="source-label">Origem: <a href={job.sourceUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{job.source} <ArrowRight size={11} /></a></span><div className="job-actions"><button className="detail-button" onClick={onDetails}>Ver vaga</button><button className={`queue-button ${queued ? 'is-queued' : ''}`} onClick={onQueue}>{queued ? <><Check size={15} /> Na fila</> : <><Plus size={15} /> Adicionar à fila</>}</button></div></div></div>
   </article>
 }
 
@@ -282,13 +323,8 @@ function QueueView({ jobs, onDetails, onStart }: { jobs: Job[]; onDetails: (job:
   return <div className="queue-page"><div className="queue-summary"><div><span className="summary-caption">CANDIDATURAS SELECIONADAS</span><strong>{jobs.length}</strong><span>na sua fila</span></div><div className="summary-estimate"><Clock3 size={16} /><span>{jobs.some((job) => job.id.match(/^[0-9a-f-]{36}$/i)) ? 'O envio à fila é real; o agente que preencheria candidaturas ainda não está conectado.' : 'Dados de demonstração; nada será enviado.'}</span></div></div>{jobs.length ? <div className="queue-job-list">{jobs.map((job) => <button className="queue-job-row" key={job.id} onClick={() => onDetails(job)}><div className={`company-mark small ${job.accent}`}>{job.initials}</div><div><strong>{job.title}</strong><span>{job.company} · {job.location}</span></div><span className={`queue-status ${job.status === 'applying' ? 'in-progress' : ''}`}><i />{job.status === 'applying' ? 'Na fila de processamento' : 'Salva'}</span><ArrowRight size={16} /></button>)}</div> : <p className="empty-queue">Sua fila está vazia. Adicione uma oportunidade para começar.</p>}<div className="queue-safety"><ShieldCheck size={18} /><div><strong>Você mantém o controle</strong><p>Esta versão não submete candidatura nem responde formulários automaticamente.</p></div></div><button className="primary-button start-queue" disabled={!jobs.length} onClick={onStart}><Send size={15} /> Iniciar {jobs.length} candidatura{jobs.length === 1 ? '' : 's'}</button></div>
 }
 
-function ProfileView({ userEmail, onBack }: { userEmail: string | null; onBack: () => void }) {
-  const displayName = userEmail ? userEmail.split('@')[0] : 'Perfil de demonstração'
-  return <div className="profile-page"><div className="profile-page-heading"><div className="large-profile-avatar">{userEmail?.[0]?.toUpperCase() ?? 'NM'}</div><div><span className="summary-caption">PERFIL PROFISSIONAL</span><h2>{displayName}</h2><p>{userEmail ?? 'Dados ilustrativos, não vinculados a uma pessoa real'}</p></div><button className="quiet-button" onClick={onBack}>Voltar às vagas</button></div><div className="profile-page-content"><section><span className="section-kicker">RESUMO</span><p>{userEmail ? 'Seu resumo profissional será exibido quando você preencher seu perfil.' : 'Este perfil é apenas um exemplo visual. Suas informações reais não foram adicionadas.'}</p></section><section><span className="section-kicker">COMPETÊNCIAS DE EXEMPLO</span><div className="skill-tags"><span>React</span><span>TypeScript</span><span>Design systems</span><span>APIs</span></div></section><div className="profile-demo-note"><Sparkles size={16} /> {userEmail ? 'A edição e importação do currículo ainda não estão disponíveis.' : 'Perfil ilustrativo para demonstração.'}</div></div></div>
-}
-
 function JobDetails({ job, queued, onClose, onQueue }: { job: Job; queued: boolean; onClose: () => void; onQueue: () => void }) {
-  return <div className="modal-backdrop details-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="details-modal" role="dialog" aria-modal="true" aria-labelledby="details-title"><div className="details-top"><div className={`company-mark ${job.accent}`}>{job.initials}</div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={19} /></button></div><span className="company-name">{job.company}</span><h2 id="details-title">{job.title}</h2><p className="job-location">{job.location} <span>·</span> {job.workplace} <span>·</span> {job.salary}</p><div className="details-match"><div className="match-score large"><span>{job.score}</span><small>%</small></div><div><strong>Compatibilidade com seu perfil</strong><p>Baseada em competências e experiência que aparecem no perfil de demonstração.</p></div></div><div className="detail-columns"><div><span className="section-kicker">PONTOS EM COMUM</span>{job.matched.map((skill) => <p className="detail-bullet positive" key={skill}><Check size={14} /> {skill}</p>)}<span className="section-kicker gap-heading">A CONSIDERAR</span><p className="detail-bullet caution"><span>!</span> {job.gap}</p></div><div><span className="section-kicker">SOBRE A VAGA</span><p className="description-text">{job.description}</p><span className="source-label">Origem: <a href={job.sourceUrl} target="_blank" rel="noreferrer">{job.source} ↗</a></span><p className="application-host">Aplicação hospedada em <strong>{new URL(job.applicationUrl).hostname}</strong></p></div></div><div className="details-actions"><button className="quiet-button" onClick={onClose}>Fechar</button><button className={`primary-button ${queued ? 'already-queued' : ''}`} onClick={onQueue}>{queued ? <><Check size={15} /> Já está na fila</> : <><Plus size={16} /> Adicionar à fila</>}</button></div></section></div>
+  return <div className="modal-backdrop details-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="details-modal" role="dialog" aria-modal="true" aria-labelledby="details-title"><div className="details-top"><div className={`company-mark ${job.accent}`}>{job.initials}</div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={19} /></button></div><span className="company-name">{job.company}</span><h2 id="details-title">{job.title}</h2><p className="job-location">{job.location} <span>·</span> {job.workplace} <span>·</span> {job.salary}</p><div className="details-match">{job.score > 0 && <div className="match-score large"><span>{job.score}</span><small>%</small></div>}<div><strong>{job.score > 0 ? 'Compatibilidade com seu perfil confirmado' : 'Compatibilidade ainda não calculada'}</strong><p>{job.score > 0 ? 'Baseada no perfil confirmado e na análise pública desta vaga.' : 'Confirme seu currículo para avaliar esta vaga com base nas suas evidências.'}</p></div></div><div className="detail-columns"><div><span className="section-kicker">PONTOS EM COMUM</span>{job.matched.length ? job.matched.map((skill) => <p className="detail-bullet positive" key={skill}><Check size={14} /> {skill}</p>) : <p className="resume-empty-field">Ainda sem correspondências calculadas.</p>}<span className="section-kicker gap-heading">A CONSIDERAR</span><p className="detail-bullet caution"><span>!</span> {job.gap}</p></div><div><span className="section-kicker">SOBRE A VAGA</span><p className="description-text">{job.description}</p><span className="source-label">Origem: <a href={job.sourceUrl} target="_blank" rel="noreferrer">{job.source} ↗</a></span><p className="application-host">Aplicação hospedada em <strong>{new URL(job.applicationUrl).hostname}</strong></p></div></div><div className="details-actions"><button className="quiet-button" onClick={onClose}>Fechar</button><button className={`primary-button ${queued ? 'already-queued' : ''}`} onClick={onQueue}>{queued ? <><Check size={15} /> Já está na fila</> : <><Plus size={16} /> Adicionar à fila</>}</button></div></section></div>
 }
 
 export default App

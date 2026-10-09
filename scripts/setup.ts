@@ -68,8 +68,10 @@ async function main() {
   const openAiConfigured = await transferOpenAiSecret()
   await writeFile('.env.local', `VITE_SUPABASE_URL=${projectUrl}\nVITE_SUPABASE_ANON_KEY=${anonKey}\n`, { mode: 0o600 })
   runCli(['functions', 'deploy', 'queue-application'])
-  if (openAiConfigured) runCli(['functions', 'deploy', 'analyze-job-links'])
-  console.log(`\nSchema e função de fila implantados${openAiConfigured ? ', com secret OpenAI e análise de links ativa' : ''}.`)
+  runCli(['functions', 'deploy', 'analyze-job-links'])
+  runCli(['functions', 'deploy', 'parse-resume'])
+  runCli(['functions', 'deploy', 'discover-linkedin-jobs'])
+  console.log(`\nSchema, fila, importação de currículo e descoberta pública de vagas implantados${openAiConfigured ? ', com secret OpenAI atualizado' : ''}.`)
   console.log('Para iniciar o app: npm run dev')
   console.log('No GitHub, configure Pages para publicar pela origem GitHub Actions.')
 }

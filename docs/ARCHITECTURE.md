@@ -2,16 +2,19 @@
 
 ## Implementado
 
-O cliente Vite serve a demo sem sessão. Com Supabase configurado, usa Auth para cadastro/login por email, carrega vagas do usuário e envia até 20 links públicos à Edge Function `analyze-job-links`. Regras puras de evidência, score ponderado e classificação de aprovação ficam em `src/domain` e podem ser testadas sem serviços externos.
+O cliente Vite mostra entrada institucional sem sessão. Com Supabase, usa Auth, carrega perfil/vagas do usuário e faz upload de currículo PDF/DOCX para o bucket privado. `parse-resume` cria extração estruturada como rascunho; só após revisão humana a UI grava perfil, experiências, formação, skills, idiomas, certificados, projetos e evidências verificadas. `discover-linkedin-jobs` então pesquisa páginas públicas indexadas e exige citações URL do LinkedIn antes de salvar matches. `analyze-job-links` segue disponível para URLs coladas.
 
-O Supabase guarda os dados por usuário. A migration inicial cria perfis, evidências, vagas, matches, aplicações, runs, eventos, regras e aprovações. `analyze-job-links` valida sessão, chama OpenAI Responses com web search e persiste conteúdo/proveniência usando service role apenas no backend. Uma RPC autenticada enfileira uma aplicação existente com lock por aplicação; `queue-application` valida a sessão e chama somente essa RPC.
+O Supabase guarda os dados por usuário. Migrations criam perfil, documentos, evidências, vagas, matches e fila. Edge Functions validam JWT, escopam cada operação por `user.id` e mantêm a chave OpenAI/service role apenas no backend. Uma RPC autenticada enfileira uma aplicação existente com lock por aplicação; `queue-application` valida a sessão e chama somente essa RPC.
+
+`202610100001` guarda extração de currículo para revisão, idiomas e origem dos registros; `202610100002` deduplica certificados/projetos por documento. A extensão Chrome em `browser-extension/` só passa a URL pública ativa via query string após clique; a aplicação valida host/path, preserva o deep link durante login e abre a caixa de análise quando há sessão.
 
 ## Ainda não conectado
 
-Não existe worker para consumir `pgmq`, extração de currículo, match contra evidence profile, API de approvals ou sessão de browser. A submissão de candidaturas não acontece.
+Não existe worker para consumir `pgmq`, API de approvals ou sessão de browser. A submissão de candidaturas não acontece. A extensão em `browser-extension/` transfere só a URL ativa após clique do usuário; não injeta scripts nem lê conteúdo privado do LinkedIn.
 
 ```text
-React ── Supabase Auth ── analyze-job-links ── OpenAI Responses/web search
+React ── Supabase Auth ── private resume storage ── parse-resume / OpenAI
+  ├──── discover-linkedin-jobs / analyze-job-links ── OpenAI public web search
   └──── Postgres (RLS) ─── application ─── queue-application ── pgmq
                                                                └── worker (pendente)
                                                                     └── browser agent (pendente)

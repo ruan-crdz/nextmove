@@ -24,6 +24,9 @@ export function mapStoredJob(record: Record<string, unknown>): Job {
   const sourceUrl = typeof record.source_url === 'string' ? record.source_url : applicationUrl
   const workplaceType = record.workplace_type
   const applicationStatus = record.application_status
+  const matchScore = typeof record.match_score === 'number' ? record.match_score : 0
+  const matchedSkills = Array.isArray(record.matched_skills) ? record.matched_skills.filter((item): item is string => typeof item === 'string') : []
+  const missingRequirements = Array.isArray(record.missing_requirements) ? record.missing_requirements.filter((item): item is string => typeof item === 'string') : []
   const salaryMin = typeof record.salary_min === 'number' ? record.salary_min : null
   const salaryMax = typeof record.salary_max === 'number' ? record.salary_max : null
   const salary = salaryMin && salaryMax
@@ -40,9 +43,9 @@ export function mapStoredJob(record: Record<string, unknown>): Job {
     workplace: workplaceType === 'remote' ? 'Remoto' : workplaceType === 'hybrid' ? 'Híbrido' : workplaceType === 'onsite' ? 'Presencial' : 'Modalidade não informada',
     salary,
     posted: 'adicionada agora',
-    score: 0,
-    matched: [],
-    gap: 'Conclua seu perfil para calcular compatibilidade',
+    score: matchScore,
+    matched: matchedSkills,
+    gap: missingRequirements[0] ?? 'Compatibilidade calculada com seu perfil confirmado',
     source: typeof record.source_platform === 'string' ? record.source_platform : 'Origem não informada',
     sourceUrl,
     applicationUrl,
