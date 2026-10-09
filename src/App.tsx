@@ -8,8 +8,10 @@ import './components/auth.css'
 type View = 'Vagas' | 'Fila' | 'Candidaturas' | 'Currículo'
 
 function App() {
+  const demoMode = import.meta.env.VITE_DEMO_MODE === 'true'
+  const configured = Boolean(supabase) && !demoMode
   const [view, setView] = useState<View>('Vagas')
-  const [queuedIds, setQueuedIds] = useState<string[]>(demoJobs.filter((job) => job.status).map((job) => job.id))
+  const [queuedIds, setQueuedIds] = useState<string[]>(() => configured ? [] : demoJobs.filter((job) => job.status).map((job) => job.id))
   const [selectedJob, setSelectedJob] = useState<Job | null>(null)
   const [urlEntryOpen, setUrlEntryOpen] = useState(false)
   const [urls, setUrls] = useState('')
@@ -19,8 +21,6 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false)
   const [liveJobs, setLiveJobs] = useState<Job[]>([])
   const [analyzing, setAnalyzing] = useState(false)
-  const demoMode = import.meta.env.VITE_DEMO_MODE === 'true'
-  const configured = Boolean(supabase) && !demoMode
 
   useEffect(() => {
     if (!supabase || demoMode) return
@@ -185,7 +185,7 @@ function App() {
           ))}
         </nav>
         <div className="top-actions">
-          <div className="agent-status"><span className="status-dot" /> <span>Agente ativo</span><b>{queue.length}</b></div>
+          <div className="agent-status"><span className="status-dot" /> <span>{userEmail ? 'Fila disponível' : configured ? 'Prévia' : 'Modo demo'}</span><b>{queue.length}</b></div>
           <button className="icon-button notification-button" aria-label="Notificações"><Bell size={18} /><i /></button>
           {userEmail ? <button className="avatar signed-in" aria-label={`Conta ${userEmail}`} title={userEmail} onClick={async () => { await supabase?.auth.signOut(); setToast('Você saiu da sua conta') }}>{userEmail.slice(0, 1).toUpperCase()}</button> : <button className="avatar signed-in" aria-label={configured ? 'Entrar na conta' : 'Modo de demonstração'} title={configured ? 'Entrar ou criar conta' : 'Modo de demonstração'} onClick={() => configured && setAuthOpen(true)}>{configured ? <KeyRound size={15} /> : 'DEMO'}</button>}
         </div>
@@ -221,7 +221,7 @@ function App() {
           </div>
           {view === 'Vagas' && <>
             <div className="search-tools"><label className="search-field"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cargo, empresa ou palavra-chave" /></label><button className="filter-button" onClick={() => setToast('Filtros: remoto · faixa salarial · senioridade')}><Filter size={16} /><span>Filtros</span><span className="filter-number">2</span></button><button className="sort-button"><ArrowDownWideNarrow size={16} /> Relevância <ChevronDown size={14} /></button></div>
-            <div className="result-meta"><span><strong>{visibleJobs.length} oportunidades</strong> {userEmail ? 'na sua conta' : configured ? '· faça login para usar suas vagas' : 'de demonstração'}</span><button onClick={() => setUrlEntryOpen(true)}><Link2 size={15} /> Adicionar por link</button></div>
+            <div className="result-meta"><span><strong>{visibleJobs.length} oportunidades</strong> {userEmail ? 'na sua conta' : configured ? '· prévia com dados ilustrativos' : 'de demonstração'}</span><button onClick={() => setUrlEntryOpen(true)}><Link2 size={15} /> Adicionar por link</button></div>
             <div className="job-list">{visibleJobs.map((job, index) => <JobCard key={job.id} job={job} queued={queuedIds.includes(job.id)} onQueue={() => addToQueue(job)} onDetails={() => setSelectedJob(job)} style={{ animationDelay: `${index * 70}ms` }} />)}</div>
             <div className="feed-footer"><span>Fim das oportunidades por enquanto</span><div /></div>
           </>}
@@ -242,7 +242,7 @@ function App() {
         </aside>
       </main>
 
-      {!userEmail && <div className="demo-ribbon"><span className="demo-pulse" /> {configured ? 'ENTRE' : 'DEMO'} <span>{configured ? 'Entre para analisar e salvar vagas na sua conta' : 'Dados de exemplo · candidaturas não são enviadas'}</span></div>}
+      {!userEmail && <div className="demo-ribbon"><span className="demo-pulse" /> {configured ? 'PRÉVIA' : 'DEMO'} <span>{configured ? 'Vagas ilustrativas · entre para analisar e salvar oportunidades reais' : 'Dados de exemplo · candidaturas não são enviadas'}</span></div>}
       {toast && <div className="toast"><Check size={16} />{toast}<button onClick={() => setToast('')} aria-label="Fechar aviso"><X size={14} /></button></div>}
       {urlEntryOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !analyzing) setUrlEntryOpen(false) }}><section className="link-modal" role="dialog" aria-modal="true" aria-labelledby="link-modal-title"><div className="modal-title-row"><div className="modal-icon"><Link2 size={18} /></div><button className="icon-button" onClick={() => setUrlEntryOpen(false)} aria-label="Fechar" disabled={analyzing}><X size={18} /></button></div><h2 id="link-modal-title">Traga uma vaga para cá</h2><p>{userEmail ? 'Cole até 20 links públicos de vagas. Um por linha.' : 'No modo demo, os links não são analisados. Entre para salvar e analisar vagas.'}</p><textarea value={urls} onChange={(event) => setUrls(event.target.value)} placeholder={'https://example.com/careers/role\nhttps://linkedin.com/jobs/view/...'} rows={4} autoFocus disabled={analyzing} /><div className="modal-note"><ShieldCheck size={15} /> Mantemos a origem e o link original da vaga; páginas com login não são acessadas.</div><div className="modal-actions"><button className="quiet-button" onClick={() => setUrlEntryOpen(false)} disabled={analyzing}>Cancelar</button><button className="primary-button" onClick={addLinks} disabled={analyzing}>{analyzing ? 'Analisando…' : 'Analisar links'} <ArrowRight size={15} /></button></div></section></div>}
       {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} />}
