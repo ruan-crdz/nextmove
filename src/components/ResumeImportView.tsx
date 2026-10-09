@@ -211,8 +211,9 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
       <div className="resume-upload-icon"><Upload size={19} /></div>
       <label className="resume-file-picker">Selecione seu currículo<input type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setMessage('') }} /></label>
       <p>PDF ou DOCX · até 10 MB · guardado em armazenamento privado.</p>
+      {!file && <p className="resume-upload-prompt" id="resume-upload-prompt">Selecione um arquivo acima para habilitar a extração.</p>}
       {file && <div className="resume-selected-file"><FileText size={16} /><span>{file.name}</span><span>{Math.max(1, Math.round(file.size / 1024))} KB</span></div>}
-      <button className="primary-button" disabled={!file || loading} onClick={parseResume}>{loading ? <><LoaderCircle size={16} className="resume-spinner" /> Extraindo perfil…</> : <>Extrair perfil com IA <ArrowRight size={16} /></>}</button>
+      <button className="primary-button" aria-describedby={!file ? 'resume-upload-prompt' : undefined} disabled={!file || loading} onClick={parseResume}>{loading ? <><LoaderCircle size={16} className="resume-spinner" /> Extraindo perfil…</> : <>Extrair perfil com IA <ArrowRight size={16} /></>}</button>
     </section>}
     {profile && <>
       <div className="resume-review-notice"><Sparkles size={17} /><div><strong>Extraído por IA · aguardando sua revisão</strong><span>Edite o que precisar. Só o que você confirmar poderá fundamentar recomendações.</span></div></div>
