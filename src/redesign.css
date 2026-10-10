@@ -495,7 +495,7 @@ body { min-height: 0; overscroll-behavior: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition-duration: .01ms !important; }
 }
 
 /* Fixed viewport contract: no document-level vertical or horizontal scrollbar. */
