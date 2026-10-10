@@ -348,7 +348,7 @@ function QueueView({ jobs, onDetails, onStart }: { jobs: Job[]; onDetails: (job:
   const summary = jobs.some((job) => job.status === 'needs_input')
     ? 'Algumas candidaturas precisam da sua resposta.'
     : failedCount > 0
-      ? `${failedCount} candidatura${failedCount === 1 ? '' : 's'} falhou${failedCount === 1 ? '' : 'ram'} ao iniciar. Confira o erro antes de tentar novamente.`
+      ? `${failedCount} candidatura${failedCount === 1 ? ' falhou' : 's falharam'} ao iniciar. Confira o erro antes de tentar novamente.`
       : jobs.some((job) => job.status === 'applying')
         ? 'O agente está preparando candidaturas. Revise cada pergunta e confirme antes do envio.'
         : jobs.some((job) => job.status === 'queued')
