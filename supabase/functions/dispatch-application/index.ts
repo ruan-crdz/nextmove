@@ -24,7 +24,6 @@ const questionTool = {
   type: 'function',
   name: 'request_user_response',
   description: 'Pause the application and request a user answer or an explicit final-submit decision. Use for any missing, uncertain, sensitive, or legally significant information. Do not continue before a result is returned.',
-  strict: true,
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -157,20 +156,23 @@ Deno.serve(async (request: Request) => {
     })
     if (!createResponse.ok) {
       let errorCode = 'unknown_error'
+      let errorParameter = 'unknown_parameter_location'
       try {
         const responseBody = await createResponse.json()
         const providerError = isRecord(responseBody) && isRecord(responseBody.error) ? responseBody.error : {}
         const value = typeof providerError.code === 'string' ? providerError.code : providerError.type
         if (typeof value === 'string') errorCode = value.replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 80) || errorCode
+        if (typeof providerError.param === 'string') errorParameter = providerError.param.replace(/[^a-zA-Z0-9_.\[\]-]/g, '').slice(0, 120) || errorParameter
       } catch {
         errorCode = 'invalid_error_response'
       }
       console.error('OpenAI Agents session creation rejected', {
         status: createResponse.status,
         code: errorCode,
+        param: errorParameter,
         requestId: createResponse.headers.get('x-request-id'),
       })
-      return failRun(admin, user.id, application.id, run.id, `OpenAI recusou criar a sessão (HTTP ${createResponse.status}, ${errorCode}). Confira os escopos da chave Agents API e o acesso ao modelo.`)
+      return failRun(admin, user.id, application.id, run.id, `OpenAI recusou criar a sessão (HTTP ${createResponse.status}, ${errorCode}${errorParameter !== 'unknown_parameter_location' ? ` em ${errorParameter}` : ''}). Confira o payload de criação da sessão.`)
     }
     createdSession = await createResponse.json()
   } catch {
