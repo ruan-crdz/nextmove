@@ -97,7 +97,7 @@ function buildSessionEvent(approval: Record<string, unknown>, decision: string, 
         role: 'user',
         content: [{ type: 'input_text', text: body.answer === 'confirm_submit'
           ? 'I explicitly reviewed this application and authorize you to submit this specific application now. Submit it exactly once, then report the actual confirmation or error. Do not make any other declaration on my behalf.'
-          : 'I reviewed the current state. Continue preparing only; do not submit. If final submission is ready, ask me again.' }],
+          : 'Retome agora esta mesma candidatura. Inspecione a tela atual do browser e conclua os campos ainda não preenchidos que estejam comprovados no currículo confirmado ou em respostas já aprovadas. Não peça para rever ou confirmar novamente fatos já sustentados por essas fontes. Verifique visualmente os campos preparados. Só quando a candidatura estiver realmente pronta, chame request_user_response com request_type final_submit e apresente em português um resumo completo do empregador, vaga, idioma do currículo, respostas inseridas, carta de apresentação e qualquer campo deixado em branco com o motivo. Não pare após uma mensagem de progresso. Não clique no botão final de enviar/aplicar.' }],
       }],
     }
   }
