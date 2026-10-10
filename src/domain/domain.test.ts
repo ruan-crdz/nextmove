@@ -4,6 +4,7 @@ import { evidenceForApplication, validateSupportedEvidence } from './evidence'
 import { calculateMatch } from './matching'
 import { resumeProfileSchema } from './resume'
 import { linkedInJobUrl } from './extensionImport'
+import { openAiOutputText, parseOpenAiOutput } from '../../supabase/functions/_shared/openai-response'
 
 const evidence = [
   { id: '91ea9794-8324-49d4-b210-b3484569ecf0', claim: 'React', confidence: 1, verifiedByUser: true, allowedForApplication: true },
@@ -64,5 +65,20 @@ describe('browser extension handoff', () => {
     expect(linkedInJobUrl('https://linkedin.com/jobs/search/?keywords=react')).toBeNull()
     expect(linkedInJobUrl('https://example.com/jobs/view/123456789')).toBeNull()
     expect(linkedInJobUrl('javascript:alert(1)')).toBeNull()
+  })
+})
+
+describe('OpenAI Responses API decoding', () => {
+  it('reads structured JSON from the raw HTTP output content array', () => {
+    const rawResponse = { output: [{ type: 'message', content: [{ type: 'output_text', text: '{"fullName":"Ana Lima"}' }] }] }
+    expect(parseOpenAiOutput(rawResponse)).toEqual({ fullName: 'Ana Lima' })
+  })
+
+  it('also accepts an SDK output_text convenience field', () => {
+    expect(openAiOutputText({ output_text: '{"jobs":[]}' })).toBe('{"jobs":[]}')
+  })
+
+  it('rejects responses with no text instead of parsing undefined', () => {
+    expect(() => parseOpenAiOutput({ output: [] })).toThrow(/did not contain structured output text/i)
   })
 })

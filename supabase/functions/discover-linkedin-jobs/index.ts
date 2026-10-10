@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { parseOpenAiOutput } from '../_shared/openai-response.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -111,7 +112,7 @@ Deno.serve(async (request: Request) => {
   let citations = new Set<string>()
   try {
     const result = await response.json()
-    parsed = JSON.parse(result.output_text)
+    parsed = parseOpenAiOutput<{ jobs?: unknown }>(result)
     citations = collectCitations(result.output)
   } catch {
     return json({ error: 'Job search returned an invalid response' }, 502)

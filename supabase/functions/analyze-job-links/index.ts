@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { parseOpenAiOutput } from '../_shared/openai-response.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -112,7 +113,7 @@ Deno.serve(async (request: Request) => {
   let analysis: { jobs?: unknown }
   try {
     const response = await openAiResponse.json()
-    analysis = JSON.parse(response.output_text)
+    analysis = parseOpenAiOutput<{ jobs?: unknown }>(response)
   } catch {
     return json({ error: 'OpenAI returned an invalid analysis' }, 502)
   }

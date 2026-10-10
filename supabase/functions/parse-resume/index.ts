@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import mammoth from 'npm:mammoth@1.13.0'
+import { parseOpenAiOutput } from '../_shared/openai-response.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -113,7 +114,7 @@ Deno.serve(async (request: Request) => {
   let profile: Record<string, unknown>
   try {
     const result = await openAiResponse.json()
-    profile = JSON.parse(result.output_text)
+    profile = parseOpenAiOutput<Record<string, unknown>>(result)
   } catch {
     return failDocument(admin, document.id, user.id, 'A extração retornou um formato inválido.')
   }
