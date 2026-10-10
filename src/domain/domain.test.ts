@@ -97,18 +97,32 @@ describe('LinkedIn profile URL', () => {
 })
 
 describe('browser extension direct queue flow', () => {
-  it('analyzes and queues the selected search-result job without opening a tab', async () => {
+  it('analyzes the ATS destination and queues with the captured LinkedIn origin without opening a tab', async () => {
     document.body.innerHTML = popupHtml.match(/<body>([\s\S]*)<\/body>/)?.[1].replace(/<script[^>]*>[\s\S]*?<\/script>/g, '') ?? ''
     const calls: string[] = []
+    const linkedinOrigin = 'https://www.linkedin.com/jobs/view/4458633468/'
+    const applicationUrl = 'https://solvedex.homerun.co/ai-engineer/en'
+    const safetyRedirect = `https://www.linkedin.com/safety/go/?url=${encodeURIComponent(applicationUrl)}&urlhash=tracking&trackingId=private`
+    document.body.insertAdjacentHTML('beforeend', `<a href="${safetyRedirect}">Candidatar-se</a>`)
+    const applyAnchor = document.querySelector('a[href*="safety/go"]')
+    Object.defineProperty(applyAnchor, 'getClientRects', { value: () => [{ width: 100, height: 30 }] })
     const session = { access_token: 'access', refresh_token: 'refresh', expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-id', email: 'person@example.com' } }
     const chromeMock = {
-      tabs: { query: (_query: unknown, callback: (tabs: { url: string }[]) => void) => callback([{ url: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4458633468&trackingId=ignored' }]) },
-      storage: { local: { get: (_key: string, callback: (data: Record<string, unknown>) => void) => callback({ 'nextmove-extension-session': session }), set: (_value: unknown, callback: () => void) => callback(), remove: (_key: string, callback: () => void) => callback() } },
+      tabs: {
+        query: (_query: unknown, callback: (tabs: { id: number; url: string }[]) => void) => callback([{ id: 42, url: `${linkedinOrigin}?currentJobId=4458633468&trackingId=ignored` }]),
+        create: vi.fn(),
+      },
+      scripting: { executeScript: vi.fn(async ({ target, func }: { target: { tabId: number }; func: () => string | null }) => target.tabId === 42 ? [{ result: func() }] : []) },
+      storage: { local: { get: (key: string, callback: (data: Record<string, unknown>) => void) => callback(key === 'nextmove-extension-session' ? { 'nextmove-extension-session': session } : { 'nextmove-extension-linkedin-origin': { url: linkedinOrigin, capturedAt: Date.now() } }), set: (_value: unknown, callback: () => void) => callback(), remove: (_key: string, callback: () => void) => callback() } },
     }
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const requestBodies: Record<string, unknown>[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(url)
-      if (url.endsWith('/functions/v1/analyze-job-links')) return new Response(JSON.stringify({ jobs: [{ id: 'job-id' }] }), { status: 200 })
+      if (url.endsWith('/functions/v1/analyze-job-links')) {
+        requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+        return new Response(JSON.stringify({ jobs: [{ id: 'job-id' }] }), { status: 200 })
+      }
       if (url.includes('/rest/v1/applications?on_conflict=')) return new Response(null, { status: 201 })
       if (url.includes('/rest/v1/applications?select=id')) return new Response(JSON.stringify([{ id: 'application-id' }]), { status: 200 })
       if (url.endsWith('/functions/v1/queue-application')) return new Response(JSON.stringify({ status: 'queued' }), { status: 202 })
@@ -131,5 +145,8 @@ describe('browser extension direct queue flow', () => {
       'https://project.supabase.co/rest/v1/applications?select=id&user_id=eq.user-id&job_id=eq.job-id&limit=1',
       'https://project.supabase.co/functions/v1/queue-application',
     ])
+    expect(chromeMock.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ target: { tabId: 42 } }))
+    expect(requestBodies[0]).toEqual({ urls: [applicationUrl], originUrl: linkedinOrigin })
+    expect(chromeMock.tabs.create).not.toHaveBeenCalled()
   })
 })

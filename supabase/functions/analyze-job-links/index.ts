@@ -51,7 +51,7 @@ Deno.serve(async (request: Request) => {
   const { data: { user }, error: authError } = await userClient.auth.getUser()
   if (authError || !user) return json({ error: 'Invalid session' }, 401)
 
-  let body: { urls?: unknown }
+  let body: { urls?: unknown; originUrl?: unknown }
   try {
     body = await request.json()
   } catch {
@@ -59,6 +59,13 @@ Deno.serve(async (request: Request) => {
   }
   if (!Array.isArray(body.urls) || body.urls.length < 1 || body.urls.length > 20) {
     return json({ error: 'Provide between 1 and 20 job URLs' }, 400)
+  }
+
+  let linkedInOrigin: string | null = null
+  if (body.originUrl !== undefined) {
+    if (typeof body.originUrl !== 'string' || body.urls.length !== 1) return json({ error: 'LinkedIn origin must accompany exactly one application URL' }, 400)
+    linkedInOrigin = canonicalLinkedInJobUrl(body.originUrl)
+    if (!linkedInOrigin) return json({ error: 'LinkedIn origin must be a public LinkedIn job URL' }, 400)
   }
 
   const urls: string[] = []
@@ -139,10 +146,10 @@ Deno.serve(async (request: Request) => {
       salary_min: nullableNumber(item.salaryMin),
       salary_max: nullableNumber(item.salaryMax),
       currency: nullableString(item.currency),
-      source_platform: sourcePlatform(item.sourceUrl),
-      source_url: item.sourceUrl,
-      application_platform: nullableString(item.applicationPlatform),
-      application_url: isPublicHttpsUrl(item.applicationUrl) ? item.applicationUrl : null,
+      source_platform: sourcePlatform(linkedInOrigin ?? item.sourceUrl),
+      source_url: linkedInOrigin ?? item.sourceUrl,
+      application_platform: linkedInOrigin ? new URL(item.sourceUrl).hostname.replace(/^www\./, '') : nullableString(item.applicationPlatform),
+      application_url: linkedInOrigin ? item.sourceUrl : isPublicHttpsUrl(item.applicationUrl) ? item.applicationUrl : null,
       published_at: validDate(item.publishedAt),
       verified_at: null,
     }]
@@ -164,6 +171,16 @@ Deno.serve(async (request: Request) => {
       source_url: job.source_url,
     }, { onConflict: 'user_id,job_id,source_url' })
     if (sourceError) return json({ error: 'Could not save job source provenance' }, 500)
+    if (job.application_url && job.application_url !== job.source_url) {
+      const { error: applicationSourceError } = await adminClient.from('job_sources').upsert({
+        user_id: user.id,
+        job_id: data.id,
+        platform: sourcePlatform(job.application_url),
+        source_url: job.application_url,
+        metadata: { role: 'application_destination' },
+      }, { onConflict: 'user_id,job_id,source_url' })
+      if (applicationSourceError) return json({ error: 'Could not save application destination provenance' }, 500)
+    }
     savedJobs.push(data)
   }
   return json({ jobs: savedJobs }, 200)
@@ -214,4 +231,15 @@ function json(body: Record<string, unknown>, status: number) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+}
+
+function canonicalLinkedInJobUrl(value: string) {
+  try {
+    const url = new URL(value)
+    const jobId = url.pathname.match(/\/jobs\/view\/(\d+)/)?.[1]
+    if (url.protocol !== 'https:' || !/(^|\.)linkedin\.com$/i.test(url.hostname) || !jobId) return null
+    return `https://www.linkedin.com/jobs/view/${jobId}/`
+  } catch {
+    return null
+  }
 }

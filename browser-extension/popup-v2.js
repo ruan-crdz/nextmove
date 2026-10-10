@@ -6,21 +6,37 @@ const accountView = document.querySelector('#account-view')
 const accountLabel = document.querySelector('#account-label')
 const signOutButton = document.querySelector('#sign-out')
 const sessionStorageKey = 'nextmove-extension-session'
+const linkedinOriginKey = 'nextmove-extension-linkedin-origin'
 let jobUrl = null
+let originUrl = null
+let activeTabId = null
+let needsLinkedInApplicationLink = false
 let session = null
 let busy = false
 
-function canonicalLinkedInJobUrl(value) {
+function activeJobUrl(value) {
   try {
     const url = new URL(value)
-    if (url.protocol !== 'https:' || !/(^|\.)linkedin\.com$/i.test(url.hostname)) return null
+    if (url.protocol !== 'https:' || url.username || url.password || isPrivateHost(url.hostname)) return null
+    if (!/(^|\.)linkedin\.com$/i.test(url.hostname)) {
+      if (url.pathname === '/') return null
+      return { applicationUrl: url.href, linkedinOrigin: null, needsApplicationLink: false, label: url.hostname }
+    }
     const directJobId = url.pathname.match(/\/jobs\/view\/(\d+)/)?.[1]
     const resultJobId = url.pathname.includes('/jobs/search-results/') ? url.searchParams.get('currentJobId') : null
     const jobId = directJobId ?? (resultJobId && /^\d+$/.test(resultJobId) ? resultJobId : null)
-    return jobId ? `https://www.linkedin.com/jobs/view/${jobId}/` : null
+    if (!jobId) return null
+    const canonicalUrl = `https://www.linkedin.com/jobs/view/${jobId}/`
+    return { applicationUrl: null, linkedinOrigin: canonicalUrl, needsApplicationLink: true, label: `vaga ${jobId}` }
   } catch {
     return null
   }
+}
+
+function isPrivateHost(hostname) {
+  const host = hostname.toLowerCase()
+  return host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') ||
+    /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host) || host === '::1'
 }
 
 function jobLabel() {
@@ -28,15 +44,53 @@ function jobLabel() {
 }
 
 function render() {
-  const hasJob = Boolean(jobUrl)
+  const hasJob = Boolean(jobUrl || needsLinkedInApplicationLink)
   loginForm.hidden = !hasJob || Boolean(session)
   accountView.hidden = !hasJob || !session
   sendButton.disabled = !session || !hasJob || busy
+  document.querySelector('#send-label').textContent = needsLinkedInApplicationLink ? 'Extrair candidatura e adicionar à fila' : 'Adicionar à fila'
   if (session) accountLabel.textContent = `Conectado como ${session.user.email}`
+}
+
+function extractApplicationLinkFromPage() {
+  const visibleLinks = Array.from(document.querySelectorAll('a[href]')).filter((anchor) => {
+    const label = (anchor.innerText || anchor.getAttribute('aria-label') || anchor.textContent || '').replace(/\s+/g, ' ').trim()
+    const visible = anchor.getClientRects().length > 0 && getComputedStyle(anchor).visibility !== 'hidden'
+    return visible && /^(candidatar-se|apply(?: now)?)$/i.test(label)
+  })
+  const destinations = new Set()
+  for (const anchor of visibleLinks) {
+    try {
+      const link = new URL(anchor.href)
+      if (/(^|\.)linkedin\.com$/i.test(link.hostname) && link.pathname.includes('/safety/go/')) {
+        const destination = link.searchParams.get('url')
+        if (destination) destinations.add(destination)
+      } else {
+        destinations.add(link.href)
+      }
+    } catch {
+      continue
+    }
+  }
+  const safeDestinations = [...destinations].filter((value) => {
+    try {
+      const url = new URL(value)
+      return url.protocol === 'https:' && !/(^|\.)linkedin\.com$/i.test(url.hostname) &&
+        !url.username && !url.password && url.hostname !== 'localhost' && !url.hostname.endsWith('.local') &&
+        !/^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url.hostname)
+    } catch {
+      return false
+    }
+  })
+  return safeDestinations.length === 1 ? safeDestinations[0] : null
 }
 
 function readStoredSession() {
   return new Promise((resolve) => chrome.storage.local.get(sessionStorageKey, (values) => resolve(values[sessionStorageKey] ?? null)))
+}
+
+function readLinkedInOrigin() {
+  return new Promise((resolve) => chrome.storage.local.get(linkedinOriginKey, (values) => resolve(values[linkedinOriginKey] ?? null)))
 }
 
 function storeSession(value) {
@@ -121,17 +175,32 @@ loginForm.addEventListener('submit', async (event) => {
 })
 
 sendButton.addEventListener('click', async () => {
-  if (!jobUrl || busy) return
+  if ((!jobUrl && !needsLinkedInApplicationLink) || busy) return
   busy = true
-  status.textContent = 'Analisando e adicionando à fila…'
+  status.textContent = needsLinkedInApplicationLink ? 'Localizando o link de candidatura…' : 'Analisando e adicionando à fila…'
   render()
   try {
+    if (needsLinkedInApplicationLink) {
+      const [injected] = await chrome.scripting.executeScript({
+        target: { tabId: activeTabId },
+        func: extractApplicationLinkFromPage,
+      })
+      const destination = injected?.result
+      if (typeof destination !== 'string') throw new Error('Não encontrei um único link externo no botão Candidatar-se. Abra os detalhes da vaga e tente novamente.')
+      const parsedDestination = new URL(destination)
+      if (parsedDestination.protocol !== 'https:' || isPrivateHost(parsedDestination.hostname) || /(^|\.)linkedin\.com$/i.test(parsedDestination.hostname)) {
+        throw new Error('O botão Candidatar-se não apontou para um endereço HTTPS público válido.')
+      }
+      jobUrl = parsedDestination.href
+      needsLinkedInApplicationLink = false
+      render()
+    }
     const activeSession = await getFreshSession()
     if (!activeSession) throw new Error('Sua sessão expirou. Entre novamente no NextMove pela extensão.')
 
     const analysis = await supabaseRequest('/functions/v1/analyze-job-links', {
       method: 'POST',
-      body: JSON.stringify({ urls: [jobUrl] }),
+      body: JSON.stringify({ urls: [jobUrl], ...(originUrl && originUrl !== jobUrl ? { originUrl } : {}) }),
     }, activeSession.access_token)
     const jobs = Array.isArray(analysis?.jobs) ? analysis.jobs : []
     if (!jobs.length) throw new Error(analysis?.message || 'Não encontrei dados públicos verificáveis para essa vaga. Tente abrir a vaga diretamente.')
@@ -176,9 +245,21 @@ signOutButton.addEventListener('click', async () => {
 })
 
 chrome.tabs.query({ active: true, currentWindow: true }, async ([tab]) => {
-  jobUrl = tab?.url ? canonicalLinkedInJobUrl(tab.url) : null
-  if (!jobUrl) status.textContent = 'Abra uma vaga pública ou selecione uma vaga nos resultados do LinkedIn.'
-  else status.textContent = jobLabel()
+  activeTabId = tab?.id ?? null
+  const activeJob = tab?.url ? activeJobUrl(tab.url) : null
+  jobUrl = activeJob?.applicationUrl ?? null
+  needsLinkedInApplicationLink = Boolean(activeJob?.needsApplicationLink)
+  if (activeJob?.linkedinOrigin) {
+    originUrl = activeJob.linkedinOrigin
+    await new Promise((resolve) => chrome.storage.local.set({ [linkedinOriginKey]: { url: originUrl, capturedAt: Date.now() } }, resolve))
+  } else if (activeJob) {
+    const stored = await readLinkedInOrigin()
+    if (stored?.url && Date.now() - stored.capturedAt < 30 * 60 * 1000) originUrl = stored.url
+  }
+  if (!activeJob) status.textContent = 'Abra uma vaga pública do LinkedIn ou a página de candidatura da empresa.'
+  else if (activeJob.needsApplicationLink) status.textContent = `${activeJob.label} · o botão vai localizar o link de candidatura externo`
+  else if (originUrl && !activeJob.linkedinOrigin) status.textContent = `${activeJob.label} · origem LinkedIn preservada`
+  else status.textContent = activeJob.label
   session = await getFreshSession()
   render()
 })
