@@ -6,7 +6,7 @@ import { WelcomePage } from './components/WelcomePage'
 import { ResumeImportView } from './components/ResumeImportView'
 import type { ResumeProfile } from './domain/resume'
 import { linkedInJobUrl } from './domain/extensionImport'
-import { supabase } from './lib/supabase'
+import { invokeAuthenticated, supabase } from './lib/supabase'
 import './components/auth.css'
 
 type View = 'Vagas' | 'Fila' | 'Candidaturas' | 'Currículo'
@@ -127,7 +127,7 @@ function App() {
       const { data: application } = await supabase.from('applications')
         .select('id').eq('user_id', user.id).eq('job_id', job.id).maybeSingle()
       if (!application) continue
-      const { error } = await supabase.functions.invoke('queue-application', { body: { applicationId: application.id } })
+      const { error } = await invokeAuthenticated('queue-application', { applicationId: application.id })
       if (!error) queued += 1
     }
     setAnalyzing(false)
@@ -168,9 +168,7 @@ function App() {
       setAuthOpen(true)
       return
     }
-    const { data, error } = await supabase.functions.invoke('analyze-job-links', {
-      body: { urls: [...new Set(links)] },
-    })
+    const { data, error } = await invokeAuthenticated<{ jobs?: Record<string, unknown>[]; error?: string }>('analyze-job-links', { urls: [...new Set(links)] })
     setAnalyzing(false)
     if (error || data?.error) {
       setToast(data?.error ?? 'Não foi possível analisar os links. Tente novamente.')
@@ -195,7 +193,7 @@ function App() {
     if (!supabase) return
     setAnalyzing(true)
     setToast(`Perfil confirmado${profile.headline ? ` para ${profile.headline}` : ''}. Buscando vagas públicas no LinkedIn…`)
-    const { data, error } = await supabase.functions.invoke('discover-linkedin-jobs', { body: {} })
+    const { data, error } = await invokeAuthenticated<{ jobs?: Record<string, unknown>[]; error?: string; message?: string }>('discover-linkedin-jobs')
     setAnalyzing(false)
     if (error || data?.error) {
       setToast(data?.error ?? 'Não foi possível buscar vagas agora. Tente novamente pela busca.')

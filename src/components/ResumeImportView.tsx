@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, Check, FileText, LoaderCircle, Sparkles, Upload } from 'lucide-react'
 import { resumeProfileSchema, type ResumeProfile } from '../domain/resume'
-import { supabase } from '../lib/supabase'
+import { invokeAuthenticated, supabase } from '../lib/supabase'
 import './resume-import.css'
 import './resume-review.css'
 
@@ -20,6 +20,7 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [saved, setSaved] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let active = true
@@ -81,8 +82,8 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
 
       setDocumentId(newDocumentId)
       setFileName(file.name)
-      const { data, error } = await supabase.functions.invoke('parse-resume', { body: { documentId: newDocumentId } })
-      if (error || data?.error) throw new Error(data?.error ?? 'Não foi possível extrair o currículo.')
+      const { data, error } = await invokeAuthenticated<{ profile?: unknown; error?: string }>('parse-resume', { documentId: newDocumentId })
+      if (error || !data || data.error) throw new Error(data?.error ?? error?.message ?? 'Não foi possível extrair o currículo.')
       const parsed = resumeProfileSchema.safeParse(data.profile)
       if (!parsed.success) throw new Error('A extração veio incompleta. Tente outro arquivo.')
       setProfile(parsed.data)
@@ -208,11 +209,14 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
       <div><span className="summary-caption">PERFIL PROFISSIONAL</span><h2>Importar currículo</h2><p>As informações só entram no seu perfil depois que você revisar e confirmar.</p></div>
     </div>
     {!profile && <section className="resume-upload-section">
-      <div className="resume-upload-icon"><Upload size={19} /></div>
-      <label className="resume-file-picker">Selecione seu currículo<input type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setMessage('') }} /></label>
-      <p>PDF ou DOCX · até 10 MB · guardado em armazenamento privado.</p>
-      {!file && <p className="resume-upload-prompt" id="resume-upload-prompt">Selecione um arquivo acima para habilitar a extração.</p>}
-      {file && <div className="resume-selected-file"><FileText size={16} /><span>{file.name}</span><span>{Math.max(1, Math.round(file.size / 1024))} KB</span></div>}
+      <button className="resume-upload-target" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+        <span className="resume-upload-icon"><Upload size={19} /></span>
+        <span className="resume-upload-title">{file ? 'Trocar currículo' : 'Clique aqui para selecionar seu currículo'}</span>
+        <span className="resume-upload-formats">PDF ou DOCX · até 10 MB · armazenamento privado</span>
+        {file && <span className="resume-selected-file"><FileText size={16} /><span>{file.name}</span><span>{Math.max(1, Math.round(file.size / 1024))} KB</span></span>}
+      </button>
+      <input ref={fileInputRef} className="resume-file-input" type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" aria-label="Arquivo de currículo PDF ou DOCX" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setMessage('') }} />
+      {!file && <p className="resume-upload-prompt" id="resume-upload-prompt">Selecione um arquivo no card para habilitar a extração.</p>}
       <button className="primary-button" aria-describedby={!file ? 'resume-upload-prompt' : undefined} disabled={!file || loading} onClick={parseResume}>{loading ? <><LoaderCircle size={16} className="resume-spinner" /> Extraindo perfil…</> : <>Extrair perfil com IA <ArrowRight size={16} /></>}</button>
     </section>}
     {profile && <>
