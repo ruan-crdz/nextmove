@@ -1,0 +1,51 @@
+:root {
+  --nm-blue-950: #082050;
+  --nm-blue-900: #003078;
+  --nm-blue-800: #003888;
+  --nm-blue-700: #004098;
+  --nm-blue-600: #0060d8;
+  --nm-blue-500: #0080f0;
+  --nm-blue-100: #eaf2ff;
+  --nm-background: #f3f2ef;
+  --nm-surface: #ffffff;
+  --nm-text: #191c22;
+  --nm-text-secondary: #626975;
+  --nm-border: #e1e4e9;
+  --nm-success: #18805c;
+  --nm-warning: #986414;
+  --nm-danger: #b33e3e;
+  --nm-radius: 8px;
+
+  --ink: var(--nm-text);
+  --muted: var(--nm-text-secondary);
+  --line: var(--nm-border);
+  --paper: var(--nm-surface);
+  --canvas: var(--nm-background);
+  --green: var(--nm-blue-700);
+  --green-dark: var(--nm-blue-900);
+  --green-pale: var(--nm-blue-100);
+  --lime: #cfe2ff;
+  --orange: #d97738;
+  --shadow: 0 2px 10px rgba(8, 32, 80, .06);
+}
+
+.nav-item.active { color: var(--nm-blue-700); }
+.nav-item.active:after { background: var(--nm-blue-600); }
+.nav-count { background: var(--nm-blue-100); color: var(--nm-blue-700); }
+.approval-count { background: #fff0e8; color: #9a4d1c; }
+.profile-progress .progress-track span { background: var(--nm-blue-600); }
+.shortcut>span,
+.match-score { color: var(--nm-blue-700); }
+.filter-number { background: var(--nm-blue-100); color: var(--nm-blue-700); }
+.queue-status.in-progress { color: var(--nm-blue-700); }
+.queue-status.in-progress i,
+.mini-state.working { background: var(--nm-blue-600); box-shadow: 0 0 0 3px var(--nm-blue-100); }
+.welcome-login { border-color: var(--nm-border); color: var(--nm-blue-700); }
+.welcome-hero { background: var(--nm-blue-950); }
+.welcome-photo-shade { background: rgba(8, 32, 80, .58); }
+.welcome-eyebrow { color: #e4eeff; }
+.welcome-eyebrow svg { color: #9fc5ff; }
+.welcome-hero h1 span { color: #a6ccff; }
+.welcome-primary { border-color: var(--nm-blue-600); background: var(--nm-blue-600); color: #fff; }
+.welcome-primary:hover { background: var(--nm-blue-700); }
+.principle-icon { color: var(--nm-blue-700); background: var(--nm-blue-100); }

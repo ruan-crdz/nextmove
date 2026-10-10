@@ -27,22 +27,22 @@ describe('authenticated public entry', () => {
   it('shows the institutional entry instead of a fake profile to logged-out visitors', async () => {
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: /seu próximo passo começa com clareza/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /criar minha conta/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /entrar na minha conta/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /encontre a vaga.*a gente cuida do resto/i })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /criar minha conta/i })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Já tenho conta' })).toBeInTheDocument()
     expect(screen.queryByText(/alex martins/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Vagas para você' })).not.toBeInTheDocument()
   })
 
   it('opens signup and login in their respective modes', async () => {
     const { unmount } = render(<App />)
-    await screen.findByRole('heading', { name: /seu próximo passo começa com clareza/i })
-    fireEvent.click(screen.getByRole('button', { name: /criar minha conta/i }))
+    await screen.findByRole('heading', { name: /encontre a vaga.*a gente cuida do resto/i })
+    fireEvent.click(screen.getAllByRole('button', { name: /criar minha conta/i })[0])
     expect(await screen.findByRole('heading', { name: 'Seu próximo passo começa aqui' })).toBeInTheDocument()
     unmount()
 
     render(<App />)
-    await screen.findByRole('heading', { name: /seu próximo passo começa com clareza/i })
+    await screen.findByRole('heading', { name: /encontre a vaga.*a gente cuida do resto/i })
     fireEvent.click(screen.getByRole('button', { name: /já tenho uma conta, entrar/i }))
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Boas-vindas de volta' })).toBeInTheDocument())
   })

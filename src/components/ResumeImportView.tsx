@@ -14,6 +14,8 @@ type ResumeImportViewProps = {
 
 export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: ResumeImportViewProps) {
   const [file, setFile] = useState<File | null>(null)
+  const [profilePanel, setProfilePanel] = useState<'resume' | 'linkedin'>('resume')
+  const [reviewStep, setReviewStep] = useState(0)
   const [fileName, setFileName] = useState('')
   const [profile, setProfile] = useState<ResumeProfile | null>(null)
   const [documentId, setDocumentId] = useState<string | null>(null)
@@ -232,17 +234,21 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
     }
   }
 
-  return <div className="resume-workspace">
+  return <div className={`resume-workspace review-step-${reviewStep}`}>
     <div className="profile-page-heading">
       <button className="quiet-button" onClick={onBack}><ArrowLeft size={15} /> Voltar</button>
       <div><span className="summary-caption">PERFIL PROFISSIONAL</span><h2>Importar currículo</h2><p>As informações só entram no seu perfil depois que você revisar e confirmar.</p></div>
     </div>
-    <section className="resume-linkedin-section">
+    {!profile && <div className="profile-mode-switch" role="tablist" aria-label="Origem do perfil">
+      <button type="button" role="tab" aria-selected={profilePanel === 'resume'} onClick={() => setProfilePanel('resume')}>Currículo</button>
+      <button type="button" role="tab" aria-selected={profilePanel === 'linkedin'} onClick={() => setProfilePanel('linkedin')}>LinkedIn</button>
+    </div>}
+    {!profile && profilePanel === 'linkedin' && <section className="resume-linkedin-section">
       <div><strong>Seu perfil no LinkedIn</strong><p>Salve o link público. Para importar experiências e skills, exporte seu perfil do LinkedIn em PDF e envie abaixo; não acessamos dados privados.</p></div>
       <label className="resume-linkedin-field"><span>URL do perfil</span><input type="url" placeholder="https://www.linkedin.com/in/seu-perfil/" value={linkedinUrl} onChange={(event) => setLinkedinUrl(event.target.value)} aria-label="URL do seu perfil público do LinkedIn" /></label>
       <button className="quiet-button" disabled={linkedinSaving} onClick={saveLinkedInUrl}>{linkedinSaving ? 'Salvando…' : 'Salvar link do LinkedIn'}</button>
-    </section>
-    {!profile && <section className="resume-upload-section">
+    </section>}
+    {!profile && profilePanel === 'resume' && <section className="resume-upload-section">
       <button className="resume-upload-target" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
         <span className="resume-upload-icon"><Upload size={19} /></span>
         <span className="resume-upload-title">{file ? 'Trocar currículo' : 'Clique aqui para selecionar seu currículo'}</span>
@@ -255,6 +261,9 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
     </section>}
     {profile && <>
       <div className="resume-review-notice"><Sparkles size={17} /><div><strong>Extraído por IA · aguardando sua revisão</strong><span>Edite o que precisar. Só o que você confirmar poderá fundamentar recomendações.</span></div></div>
+      <div className="resume-review-steps" role="tablist" aria-label="Etapas da revisão">
+        {['Dados', 'Resumo', 'Experiência', 'Formação', 'Extras'].map((label, index) => <button key={label} type="button" role="tab" aria-selected={reviewStep === index} onClick={() => setReviewStep(index)}>{label}</button>)}
+      </div>
       <section className="resume-review-form">
         <div className="resume-field-grid">
           <label>Nome completo<input value={profile.fullName ?? ''} onChange={(event) => update('fullName', event.target.value || null)} /></label>
@@ -293,7 +302,10 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
 }
 
 function ReviewList({ title, count, items }: { title: string; count: number; items: ReactNode[] }) {
-  return <section className="resume-review-group"><div className="resume-review-title"><span>{title}</span><b>{count}</b></div>{count ? items : <p className="resume-empty-field">Nenhum item identificado no arquivo.</p>}</section>
+  const [page, setPage] = useState(0)
+  const pageCount = Math.max(1, Math.ceil(count))
+  useEffect(() => { setPage(0) }, [count])
+  return <section className="resume-review-group"><div className="resume-review-title"><span>{title}</span><b>{count}</b></div>{count ? <>{items[page]}{pageCount > 1 && <nav className="resume-review-item-nav" aria-label={`Páginas de ${title.toLowerCase()}`}><button type="button" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>Anterior</button><span>{page + 1} de {pageCount}</span><button type="button" disabled={page + 1 >= pageCount} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}>Próximo</button></nav>}</> : <p className="resume-empty-field">Nenhum item identificado no arquivo.</p>}</section>
 }
 
 function clean(value: string | null) {

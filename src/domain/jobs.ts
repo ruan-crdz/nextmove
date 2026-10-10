@@ -8,6 +8,7 @@ export type Job = {
   workplace: string
   salary: string
   posted: string
+  discoveredAt?: string
   score: number
   matched: string[]
   gap: string
@@ -44,6 +45,7 @@ export function mapStoredJob(record: Record<string, unknown>): Job {
     workplace: workplaceType === 'remote' ? 'Remoto' : workplaceType === 'hybrid' ? 'Híbrido' : workplaceType === 'onsite' ? 'Presencial' : 'Modalidade não informada',
     salary,
     posted: 'adicionada agora',
+    discoveredAt: typeof record.discovered_at === 'string' ? record.discovered_at : undefined,
     score: matchScore,
     matched: matchedSkills,
     gap: missingRequirements[0] ?? 'Compatibilidade calculada com seu perfil confirmado',

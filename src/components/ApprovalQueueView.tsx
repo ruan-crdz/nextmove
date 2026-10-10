@@ -18,10 +18,16 @@ type Approval = {
 
 export function ApprovalQueueView() {
   const [approvals, setApprovals] = useState<Approval[]>([])
+  const [page, setPage] = useState(0)
+  const pageSize = typeof window === 'undefined' || window.innerWidth <= 768 ? 1 : window.innerHeight < 760 ? 2 : 3
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [fields, setFields] = useState<Record<string, Record<string, string>>>({})
   const [busyId, setBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
+  const pageCount = Math.max(1, Math.ceil(approvals.length / pageSize))
+  const pageApprovals = approvals.slice(page * pageSize, (page + 1) * pageSize)
+
+  useEffect(() => { setPage(0) }, [approvals.length, pageSize])
 
   useEffect(() => {
     let active = true
@@ -78,7 +84,7 @@ export function ApprovalQueueView() {
   return <section className="approval-view">
     <div className="approval-heading"><span className="summary-caption">CONTROLE HUMANO</span><h1>Aprovações pendentes</h1><p>O agente pausa quando precisa de você. Respostas de login são enviadas diretamente à sessão e não ficam salvas no NextMove.</p></div>
     {message && <p className="approval-message" role="status">{message}</p>}
-    {!approvals.length ? <div className="approval-empty"><ShieldCheck size={24} /><strong>Nenhuma aprovação pendente</strong><span>Esta lista atualiza automaticamente enquanto a página estiver aberta.</span></div> : approvals.map((approval) => {
+    {!approvals.length ? <div className="approval-empty"><ShieldCheck size={24} /><strong>Nenhuma aprovação pendente</strong><span>Esta lista atualiza automaticamente enquanto a página estiver aberta.</span></div> : <>{pageApprovals.map((approval) => {
       const job = approval.applications?.jobs
       const origin = approval.request_payload?.origin
       const requestFields = approval.request_payload?.fields ?? []
@@ -90,7 +96,7 @@ export function ApprovalQueueView() {
         <div className="approval-card-top"><span className="approval-icon"><CircleAlert size={17} /></span><div><strong>{job?.title ?? 'Candidatura'}</strong><span>{job?.company ?? 'Empresa'} · {approval.request_type.replaceAll('_', ' ')}</span></div><span className={`approval-risk ${approval.classification.toLowerCase()}`}>{approval.classification === 'ALWAYS_APPROVE' ? 'Sempre confirmar' : 'Sua resposta'}</span></div>
         <h2>{approval.question}</h2>
         {origin && <p className="approval-origin">Domínio solicitado: <strong>{origin}</strong>{approval.request_payload.reason ? ` · ${approval.request_payload.reason}` : ''}</p>}
-        {finalReview && approval.request_payload.review_summary && <div className="approval-review-summary"><span>RESUMO DA CANDIDATURA</span><pre>{approval.request_payload.review_summary}</pre></div>}
+        {finalReview && approval.request_payload.review_summary && <ApprovalReviewSummary summary={approval.request_payload.review_summary} />}
         {finalReview && !approval.request_payload.review_summary && <p className="approval-final-warning">Não há resumo textual salvo para revisar. Não autorize o envio; continuar só retoma a preparação.</p>}
         {approval.suggested_answer && !browserOrigin && !authentication && <p className="approval-suggestion">Sugestão baseada no currículo revisado: <strong>{approval.suggested_answer}</strong></p>}
         {authentication && requestFields.map((field) => <label className="approval-field" key={field.id}>{field.label}{field.required && ' *'}<input
@@ -110,6 +116,26 @@ export function ApprovalQueueView() {
           </button>
         </div>
       </article>
-    })}
+    })}{pageCount > 1 && <nav className="job-pagination" aria-label="Páginas de aprovações"><button disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>Anterior</button><span>{page + 1} de {pageCount}</span><button disabled={page + 1 >= pageCount} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}>Próxima</button></nav>}</>}
   </section>
+}
+
+function ApprovalReviewSummary({ summary }: { summary: string }) {
+  const [page, setPage] = useState(0)
+  const pages = splitSummary(summary)
+  useEffect(() => { setPage(0) }, [summary])
+  return <div className="approval-review-summary"><span>RESUMO DA CANDIDATURA</span><pre>{pages[page]}</pre>{pages.length > 1 && <nav className="approval-summary-pagination" aria-label="Páginas do resumo"><button type="button" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>Anterior</button><span>{page + 1} de {pages.length}</span><button type="button" disabled={page + 1 >= pages.length} onClick={() => setPage((current) => Math.min(pages.length - 1, current + 1))}>Próximo</button></nav>}</div>
+}
+
+function splitSummary(summary: string, maxLength = 420) {
+  const pages: string[] = []
+  let remaining = summary.trim()
+  while (remaining.length > maxLength) {
+    const boundary = remaining.lastIndexOf(' ', maxLength)
+    const end = boundary > 0 ? boundary : maxLength
+    pages.push(remaining.slice(0, end).trim())
+    remaining = remaining.slice(end).trim()
+  }
+  if (remaining) pages.push(remaining)
+  return pages.length ? pages : ['']
 }
