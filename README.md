@@ -6,7 +6,7 @@ Fundação inicial para transformar uma busca de emprego em um fluxo organizado,
 
 Sem sessão, o frontend mostra a entrada institucional. Com Supabase configurado, cadastro/login por email, upload privado de currículo PDF/DOCX, extração via OpenAI, revisão/edição e confirmação do perfil estão conectados. Após confirmar, o app busca vagas públicas com OpenAI Web Search, valida URLs citadas do LinkedIn, calcula match a partir do perfil confirmado e salva vaga, origem e match no Postgres. A análise de até 20 URLs coladas também continua disponível.
 
-O worker que consome a fila, aprovações e automação de browser ainda não estão implementados. Enfileirar não significa que uma candidatura será preenchida ou enviada.
+O botão Iniciar agora despacha runs idempotentes para uma sessão OpenAI Agents com browser hospedado. O agente usa perfil/evidências confirmadas, pode pausar e criar aprovações, e o envio final continua sempre desligado até confirmação explícita.
 
 ## Rodar localmente
 
@@ -48,6 +48,8 @@ A extensão experimental está em [`browser-extension/`](browser-extension/). No
 - `parse-resume` extrai perfil estruturado de PDF/DOCX em armazenamento privado; o usuário revisa antes de gravar linhas e evidências verificadas.
 - `discover-linkedin-jobs` usa OpenAI Responses/Web Search, exige URL pública citada do LinkedIn e relaciona as vagas ao perfil confirmado.
 - `analyze-job-links` usa OpenAI Responses com web search e Structured Outputs; `queue-application` protege o enqueue autenticado.
+- `dispatch-application` cria uma sessão de browser OpenAI sem manter Edge Function longa; `application-status` sincroniza required actions; `resolve-application-approval` retorna respostas à mesma sessão.
+- `openai-agent-webhook` valida assinatura e deduplica eventos, mas requer cadastrar o endpoint e guardar `OPENAI_WEBHOOK_SECRET`; sem isso, o polling da tela Aprovações mantém o primeiro teste funcionando.
 - URLs do LinkedIn são tratadas como origem declarada; não há scraping autenticado nem automação de Easy Apply.
 - Migrations de currículo/idiomas aplicadas e funções `queue-application`, `analyze-job-links`, `parse-resume` e `discover-linkedin-jobs` publicadas.
 
@@ -66,4 +68,4 @@ O workflow em `.github/workflows/deploy.yml` publica o build em GitHub Pages e c
 
 ## Limitações e próximo passo
 
-Para um teste real: entre, abra **Currículo → Importar currículo**, selecione seu PDF/DOCX privado, revise e confirme os campos. O NextMove tentará buscar vagas públicas indexadas do LinkedIn; a cobertura depende das páginas públicas e citações retornadas pela busca. Pela extensão, a vaga e o destino ATS são enviados à análise/fila sem nova guia. Nenhuma candidatura será preenchida ou enviada: o worker de fila, aprovações e execução de browser autorizada ainda não existem.
+Para um teste: confirme um currículo/perfil, adicione uma vaga pública com formulário ATS e clique **Iniciar candidatura**. O agente abre o domínio no browser hospedado; aprove cada domínio e responda pedidos em **Aprovações**. Ele deve parar antes do submit e pedir sua confirmação. Não envie uma inscrição real antes de revisar os dados e o domínio.

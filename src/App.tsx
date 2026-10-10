@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDownWideNarrow, ArrowRight, Bell, Bookmark, BriefcaseBusiness, Check, ChevronDown, CircleHelp, Clock3, Command, Compass, FileText, Filter, Flame, Globe2, KeyRound, Layers3, Link2, MapPin, MoreHorizontal, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { ArrowDownWideNarrow, ArrowRight, Bell, Bookmark, BriefcaseBusiness, Check, ChevronDown, CircleAlert, CircleHelp, Clock3, Command, Compass, FileText, Filter, Flame, Globe2, KeyRound, Layers3, Link2, MapPin, MoreHorizontal, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { demoJobs, mapStoredJob, type Job } from './domain/jobs'
 import { AuthDialog } from './components/AuthDialog'
 import { WelcomePage } from './components/WelcomePage'
 import { ResumeImportView } from './components/ResumeImportView'
+import { ApprovalQueueView } from './components/ApprovalQueueView'
 import type { ResumeProfile } from './domain/resume'
 import { linkedInJobUrl } from './domain/extensionImport'
 import { invokeAuthenticated, supabase } from './lib/supabase'
 import './components/auth.css'
 
-type View = 'Vagas' | 'Fila' | 'Candidaturas' | 'Currículo'
+type View = 'Vagas' | 'Fila' | 'Aprovações' | 'Candidaturas' | 'Currículo'
 
 function App() {
   const demoMode = import.meta.env.VITE_DEMO_MODE === 'true'
@@ -27,6 +28,7 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false)
   const [liveJobs, setLiveJobs] = useState<Job[]>([])
   const [analyzing, setAnalyzing] = useState(false)
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0)
 
   useEffect(() => {
     if (!supabase || demoMode) return
@@ -64,6 +66,19 @@ function App() {
       setQueuedIds([...applicationStatus.keys()])
     })
     return () => { active = false }
+  }, [demoMode, userEmail])
+
+  useEffect(() => {
+    if (!supabase || demoMode || !userEmail) return
+    const client = supabase
+    let active = true
+    const updateCount = async () => {
+      const { count } = await client.from('approval_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+      if (active) setPendingApprovalCount(count ?? 0)
+    }
+    void updateCount()
+    const interval = window.setInterval(() => { void updateCount() }, 8000)
+    return () => { active = false; window.clearInterval(interval) }
   }, [demoMode, userEmail])
 
   useEffect(() => {
@@ -116,26 +131,30 @@ function App() {
       setToast('Entre novamente para iniciar a fila.')
       return
     }
-    const pending = queue.filter((job) => job.status !== 'applying' && job.status !== 'submitted')
+    const pending = queue.filter((job) => job.status !== 'applying' && job.status !== 'needs_input' && job.status !== 'submitted')
     if (!pending.length) {
       setToast('Não há novas candidaturas salvas para iniciar.')
       return
     }
     setAnalyzing(true)
-    let queued = 0
+    let dispatched = 0
+    let failed = 0
     for (const job of pending) {
       const { data: application } = await supabase.from('applications')
         .select('id').eq('user_id', user.id).eq('job_id', job.id).maybeSingle()
       if (!application) continue
-      const { error } = await invokeAuthenticated('queue-application', { applicationId: application.id })
-      if (!error) queued += 1
+      const { error: queueError } = await invokeAuthenticated('queue-application', { applicationId: application.id })
+      if (queueError) { failed += 1; continue }
+      const { error: dispatchError } = await invokeAuthenticated('dispatch-application', { applicationId: application.id })
+      if (dispatchError) failed += 1
+      else dispatched += 1
     }
     setAnalyzing(false)
-    if (queued) {
+    if (dispatched) {
       setLiveJobs((current) => current.map((job) => pending.some((item) => item.id === job.id) ? { ...job, status: 'applying' } : job))
-      setToast(`${queued} candidatura${queued === 1 ? '' : 's'} adicionada${queued === 1 ? '' : 's'} à fila do Supabase. A execução do agente ainda não está ativa.`)
+      setToast(`${dispatched} agente${dispatched === 1 ? '' : 's'} iniciado${dispatched === 1 ? '' : 's'}${failed ? ` · ${failed} não puderam iniciar` : ''}. Acompanhe a fila para responder aprovações.`)
     } else {
-      setToast('Nenhuma candidatura entrou na fila. Verifique a conexão e tente de novo.')
+      setToast(failed ? `${failed} candidatura${failed === 1 ? '' : 's'} não pôde${failed === 1 ? '' : 'ram'} iniciar. Verifique o perfil confirmado e tente novamente.` : 'Não há candidaturas salvas para iniciar.')
     }
     window.setTimeout(() => setToast(''), 5000)
   }
@@ -211,7 +230,7 @@ function App() {
   }
 
   const navigation: { label: View; icon: typeof Compass }[] = [
-    { label: 'Vagas', icon: Compass }, { label: 'Fila', icon: Layers3 },
+    { label: 'Vagas', icon: Compass }, { label: 'Fila', icon: Layers3 }, { label: 'Aprovações', icon: CircleAlert },
     { label: 'Candidaturas', icon: BriefcaseBusiness }, { label: 'Currículo', icon: FileText },
   ]
 
@@ -238,6 +257,7 @@ function App() {
             <button key={label} className={`nav-item ${view === label ? 'active' : ''}`} onClick={() => setView(label)}>
               <Icon size={17} strokeWidth={1.8} /><span>{label}</span>
               {label === 'Fila' && queue.length > 0 && <span className="nav-count">{queue.length}</span>}
+              {label === 'Aprovações' && pendingApprovalCount > 0 && <span className="nav-count approval-count">{pendingApprovalCount}</span>}
             </button>
           ))}
         </nav>
@@ -280,6 +300,7 @@ function App() {
             <div className="feed-footer"><span>Fim das oportunidades por enquanto</span><div /></div>
           </>}
           {view === 'Fila' && <QueueView jobs={queue} onDetails={setSelectedJob} onStart={startQueue} />}
+          {view === 'Aprovações' && <ApprovalQueueView />}
           {view === 'Candidaturas' && <div className="empty-workspace"><div className="empty-icon"><BriefcaseBusiness size={24} /></div><h2>Suas candidaturas começam aqui</h2><p>Salve uma vaga ou adicione um link para organizar suas próximas oportunidades.</p><button className="primary-button" onClick={() => setView('Vagas')}>Explorar vagas <ArrowRight size={16} /></button></div>}
           {view === 'Currículo' && <ResumeImportView userEmail={userEmail} onBack={() => setView('Vagas')} onProfileConfirmed={(profile) => { void discoverLinkedInJobs(profile) }} />}
         </section>
@@ -314,11 +335,13 @@ function JobCard({ job, queued, onQueue, onDetails, style }: { job: Job; queued:
 
 function QueueMiniItem({ job }: { job: Job }) {
   const applying = job.status === 'applying'
-  return <div className="mini-queue-item"><div className={`mini-mark ${job.accent}`}>{job.initials}</div><div className="mini-info"><strong>{job.company}</strong><span>{applying ? 'Preparando candidatura' : 'Aguardando na fila'}</span><div className="mini-progress"><i style={{ width: applying ? '62%' : '8%' }} /></div></div><span className={`mini-state ${applying ? 'working' : ''}`} /></div>
+  const needsInput = job.status === 'needs_input'
+  return <div className="mini-queue-item"><div className={`mini-mark ${job.accent}`}>{job.initials}</div><div className="mini-info"><strong>{job.company}</strong><span>{needsInput ? 'Precisa de você' : applying ? 'Agente trabalhando' : 'Aguardando na fila'}</span><div className="mini-progress"><i style={{ width: applying ? '50%' : '8%' }} /></div></div><span className={`mini-state ${needsInput ? 'needs-input' : applying ? 'working' : ''}`} /></div>
 }
 
 function QueueView({ jobs, onDetails, onStart }: { jobs: Job[]; onDetails: (job: Job) => void; onStart: () => void }) {
-  return <div className="queue-page"><div className="queue-summary"><div><span className="summary-caption">CANDIDATURAS SELECIONADAS</span><strong>{jobs.length}</strong><span>na sua fila</span></div><div className="summary-estimate"><Clock3 size={16} /><span>{jobs.some((job) => job.id.match(/^[0-9a-f-]{36}$/i)) ? 'O envio à fila é real; o agente que preencheria candidaturas ainda não está conectado.' : 'Dados de demonstração; nada será enviado.'}</span></div></div>{jobs.length ? <div className="queue-job-list">{jobs.map((job) => <button className="queue-job-row" key={job.id} onClick={() => onDetails(job)}><div className={`company-mark small ${job.accent}`}>{job.initials}</div><div><strong>{job.title}</strong><span>{job.company} · {job.location}</span></div><span className={`queue-status ${job.status === 'applying' ? 'in-progress' : ''}`}><i />{job.status === 'applying' ? 'Na fila de processamento' : 'Salva'}</span><ArrowRight size={16} /></button>)}</div> : <p className="empty-queue">Sua fila está vazia. Adicione uma oportunidade para começar.</p>}<div className="queue-safety"><ShieldCheck size={18} /><div><strong>Você mantém o controle</strong><p>Esta versão não submete candidatura nem responde formulários automaticamente.</p></div></div><button className="primary-button start-queue" disabled={!jobs.length} onClick={onStart}><Send size={15} /> Iniciar {jobs.length} candidatura{jobs.length === 1 ? '' : 's'}</button></div>
+  const dispatchable = jobs.filter((job) => job.status !== 'applying' && job.status !== 'needs_input' && job.status !== 'submitted').length
+  return <div className="queue-page"><div className="queue-summary"><div><span className="summary-caption">CANDIDATURAS</span><strong>{jobs.length}</strong><span>na fila</span></div><div className="summary-estimate"><Clock3 size={16} /><span>{jobs.some((job) => job.status === 'needs_input') ? 'Algumas candidaturas precisam da sua resposta.' : jobs.some((job) => job.status === 'applying') ? 'O agente está preparando candidaturas. Revise cada pergunta e confirme antes do envio.' : 'Nenhuma candidatura é enviada sem sua confirmação final.'}</span></div></div>{jobs.length ? <div className="queue-job-list">{jobs.map((job) => <button className="queue-job-row" key={job.id} onClick={() => onDetails(job)}><div className={`company-mark small ${job.accent}`}>{job.initials}</div><div><strong>{job.title}</strong><span>{job.company} · {job.location}</span></div><span className={`queue-status ${job.status === 'applying' ? 'in-progress' : ''} ${job.status === 'needs_input' ? 'needs-input' : ''}`}><i />{job.status === 'needs_input' ? 'Precisa de você' : job.status === 'applying' ? 'Agente trabalhando' : 'Salva'}</span><ArrowRight size={16} /></button>)}</div> : <p className="empty-queue">Sua fila está vazia. Adicione uma oportunidade para começar.</p>}<div className="queue-safety"><ShieldCheck size={18} /><div><strong>Você mantém o controle</strong><p>O agente pausa para login, respostas sensíveis e revisão final. O envio continua dependendo da sua confirmação.</p></div></div><button className="primary-button start-queue" disabled={!dispatchable} onClick={onStart}><Send size={15} /> Iniciar {dispatchable} candidatura{dispatchable === 1 ? '' : 's'}</button></div>
 }
 
 function JobDetails({ job, queued, onClose, onQueue }: { job: Job; queued: boolean; onClose: () => void; onQueue: () => void }) {
