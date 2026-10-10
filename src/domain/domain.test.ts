@@ -4,6 +4,7 @@ import { evidenceForApplication, validateSupportedEvidence } from './evidence'
 import { calculateMatch } from './matching'
 import { normalizeLinkedInProfileUrl, resumeProfileSchema } from './resume'
 import { linkedInJobUrl } from './extensionImport'
+import { mapStoredJob } from './jobs'
 import { openAiOutputText, parseOpenAiOutput } from '../../supabase/functions/_shared/openai-response'
 import popupHtml from '../../browser-extension/popup.html?raw'
 import popupScript from '../../browser-extension/popup-v2.js?raw'
@@ -148,5 +149,21 @@ describe('browser extension direct queue flow', () => {
     expect(chromeMock.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ target: { tabId: 42 } }))
     expect(requestBodies[0]).toEqual({ urls: [applicationUrl], originUrl: linkedinOrigin })
     expect(chromeMock.tabs.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('stored application status', () => {
+  const record = { id: 'job-1', company: 'Empresa', application_url: 'https://example.com/apply' }
+
+  it('keeps queued and saved applications distinct from active runs', () => {
+    expect(mapStoredJob({ ...record, application_status: 'queued' }).status).toBe('queued')
+    expect(mapStoredJob({ ...record, application_status: 'saved' }).status).toBe('saved')
+    expect(mapStoredJob({ ...record, application_status: 'applying' }).status).toBe('applying')
+  })
+
+  it('preserves failed state and its safe-to-display reason', () => {
+    expect(mapStoredJob({ ...record, application_status: 'failed', failure_reason: 'OpenAI Agents API rejeitou a sessão.' })).toMatchObject({
+      status: 'failed', failureReason: 'OpenAI Agents API rejeitou a sessão.',
+    })
   })
 })

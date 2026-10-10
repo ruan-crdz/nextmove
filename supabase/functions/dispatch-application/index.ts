@@ -155,7 +155,23 @@ Deno.serve(async (request: Request) => {
         environment: { type: 'openai_hosted', desktop: { enabled: true }, network: { access: 'enabled' } },
       }),
     })
-    if (!createResponse.ok) return failRun(admin, user.id, application.id, run.id, 'Não foi possível iniciar o agente de candidatura. Verifique as permissões da chave OpenAI.')
+    if (!createResponse.ok) {
+      let errorCode = 'unknown_error'
+      try {
+        const responseBody = await createResponse.json()
+        const providerError = isRecord(responseBody) && isRecord(responseBody.error) ? responseBody.error : {}
+        const value = typeof providerError.code === 'string' ? providerError.code : providerError.type
+        if (typeof value === 'string') errorCode = value.replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 80) || errorCode
+      } catch {
+        errorCode = 'invalid_error_response'
+      }
+      console.error('OpenAI Agents session creation rejected', {
+        status: createResponse.status,
+        code: errorCode,
+        requestId: createResponse.headers.get('x-request-id'),
+      })
+      return failRun(admin, user.id, application.id, run.id, `OpenAI recusou criar a sessão (HTTP ${createResponse.status}, ${errorCode}). Confira os escopos da chave Agents API e o acesso ao modelo.`)
+    }
     createdSession = await createResponse.json()
   } catch {
     return failRun(admin, user.id, application.id, run.id, 'Não foi possível conectar ao agente OpenAI.')
@@ -218,4 +234,8 @@ function json(body: Record<string, unknown>, status: number) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

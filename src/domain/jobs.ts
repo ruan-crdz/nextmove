@@ -15,7 +15,8 @@ export type Job = {
   sourceUrl: string
   applicationUrl: string
   description: string
-  status?: 'queued' | 'applying' | 'needs_input' | 'submitted'
+  status?: 'saved' | 'queued' | 'applying' | 'needs_input' | 'submitted' | 'failed' | 'cancelled'
+  failureReason?: string
 }
 
 export function mapStoredJob(record: Record<string, unknown>): Job {
@@ -50,7 +51,15 @@ export function mapStoredJob(record: Record<string, unknown>): Job {
     sourceUrl,
     applicationUrl,
     description: typeof record.description_original === 'string' ? record.description_original : '',
-    status: applicationStatus === 'submitted' ? 'submitted' : applicationStatus === 'needs_input' ? 'needs_input' : applicationStatus === 'queued' || applicationStatus === 'researching' || applicationStatus === 'preparing' || applicationStatus === 'applying' ? 'applying' : applicationStatus ? 'queued' : undefined,
+    status: applicationStatus === 'submitted' ? 'submitted'
+      : applicationStatus === 'needs_input' ? 'needs_input'
+        : applicationStatus === 'researching' || applicationStatus === 'preparing' || applicationStatus === 'applying' ? 'applying'
+          : applicationStatus === 'saved' ? 'saved'
+            : applicationStatus === 'queued' ? 'queued'
+              : applicationStatus === 'failed' ? 'failed'
+                : applicationStatus === 'cancelled' ? 'cancelled'
+                  : undefined,
+    failureReason: typeof record.failure_reason === 'string' ? record.failure_reason : undefined,
   }
 }
 

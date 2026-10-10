@@ -1,0 +1,19 @@
+.queue-status.failed {
+  color: #aa4d44;
+  font-weight: 600;
+}
+
+.queue-status.failed i,
+.mini-state.failed {
+  background: #c95c52;
+  box-shadow: 0 0 0 3px #faece9;
+}
+
+.queue-error {
+  display: block;
+  max-width: 380px;
+  margin-top: 4px;
+  color: #a3473f;
+  font-size: 10px;
+  line-height: 1.35;
+}
