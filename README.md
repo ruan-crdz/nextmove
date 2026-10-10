@@ -34,7 +34,7 @@ Abra a URL local impressa pelo Vite. O frontend funciona sem credenciais em modo
 
 A URL pública do perfil LinkedIn pode ser salva em **Currículo**. Para importar experiências e skills que estão no seu perfil, baixe o PDF exportado pelo LinkedIn e envie junto do currículo. Login/OIDC do LinkedIn não dá acesso automático ao histórico profissional; isso exige acesso de parceiro aprovado pela plataforma.
 
-A extensão experimental está em [`browser-extension/`](browser-extension/). No Chrome, carregue a pasta via `chrome://extensions` → **Developer mode** → **Load unpacked**. Em uma vaga pública `linkedin.com/jobs/view/...`, clique na extensão e escolha **Adicionar no NextMove**. Ela transfere só a URL após clique; não lê DOM, injeta interface no LinkedIn ou automatiza candidaturas. A versão do NextMove recebe o link depois do login.
+A extensão experimental está em [`browser-extension/`](browser-extension/). No Chrome, carregue a pasta via `chrome://extensions` → **Developer mode** → **Load unpacked**. Entre no NextMove dentro do popup uma vez; depois, em uma vaga pública do LinkedIn, clique **Adicionar à fila**. A extensão analisa a URL e grava a candidatura/fila sem abrir outra guia. Não lê DOM, injeta interface no LinkedIn ou automatiza candidaturas.
 
 `npm run setup` requer Supabase CLI autenticada (`supabase login`) e os dados de projeto. Se `.env.local` já existir, o setup reutiliza URL, publishable key e project ref. Se `OPENAI_API_KEY` estiver em `.env.local` ou `.env`, o setup a envia como Supabase secret e remove a linha do arquivo local após o envio.
 

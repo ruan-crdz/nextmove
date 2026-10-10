@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { classifyApproval } from './approvals'
 import { evidenceForApplication, validateSupportedEvidence } from './evidence'
 import { calculateMatch } from './matching'
 import { normalizeLinkedInProfileUrl, resumeProfileSchema } from './resume'
 import { linkedInJobUrl } from './extensionImport'
 import { openAiOutputText, parseOpenAiOutput } from '../../supabase/functions/_shared/openai-response'
+import popupHtml from '../../browser-extension/popup.html?raw'
+import popupScript from '../../browser-extension/popup-v2.js?raw'
 
 const evidence = [
   { id: '91ea9794-8324-49d4-b210-b3484569ecf0', claim: 'React', confidence: 1, verifiedByUser: true, allowedForApplication: true },
@@ -91,5 +93,43 @@ describe('LinkedIn profile URL', () => {
     expect(normalizeLinkedInProfileUrl('https://linkedin.com/jobs/view/123')).toBeNull()
     expect(normalizeLinkedInProfileUrl('https://example.com/in/ana')).toBeNull()
     expect(normalizeLinkedInProfileUrl('http://linkedin.com/in/ana')).toBeNull()
+  })
+})
+
+describe('browser extension direct queue flow', () => {
+  it('analyzes and queues the selected search-result job without opening a tab', async () => {
+    document.body.innerHTML = popupHtml.match(/<body>([\s\S]*)<\/body>/)?.[1].replace(/<script[^>]*>[\s\S]*?<\/script>/g, '') ?? ''
+    const calls: string[] = []
+    const session = { access_token: 'access', refresh_token: 'refresh', expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-id', email: 'person@example.com' } }
+    const chromeMock = {
+      tabs: { query: (_query: unknown, callback: (tabs: { url: string }[]) => void) => callback([{ url: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4458633468&trackingId=ignored' }]) },
+      storage: { local: { get: (_key: string, callback: (data: Record<string, unknown>) => void) => callback({ 'nextmove-extension-session': session }), set: (_value: unknown, callback: () => void) => callback(), remove: (_key: string, callback: () => void) => callback() } },
+    }
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.endsWith('/functions/v1/analyze-job-links')) return new Response(JSON.stringify({ jobs: [{ id: 'job-id' }] }), { status: 200 })
+      if (url.includes('/rest/v1/applications?on_conflict=')) return new Response(null, { status: 201 })
+      if (url.includes('/rest/v1/applications?select=id')) return new Response(JSON.stringify([{ id: 'application-id' }]), { status: 200 })
+      if (url.endsWith('/functions/v1/queue-application')) return new Response(JSON.stringify({ status: 'queued' }), { status: 202 })
+      throw new Error(`Unexpected request ${url}`)
+    })
+    vi.stubGlobal('chrome', chromeMock)
+    vi.stubGlobal('fetch', fetchMock)
+    Object.assign(window, { NEXTMOVE_EXTENSION_CONFIG: { supabaseUrl: 'https://project.supabase.co', publishableKey: 'sb_publishable_test' }, chrome: chromeMock, fetch: fetchMock })
+    window.eval(popupScript)
+
+    await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>('#send')?.disabled).toBe(false))
+    expect(document.querySelector<HTMLFormElement>('#login-form')?.hidden).toBe(true)
+    expect(document.querySelector<HTMLDivElement>('#account-view')?.hidden).toBe(false)
+    document.querySelector<HTMLButtonElement>('#send')?.click()
+    await vi.waitFor(() => expect(document.querySelector('#status')?.textContent).toMatch(/adicionada à fila/i))
+
+    expect(calls).toEqual([
+      'https://project.supabase.co/functions/v1/analyze-job-links',
+      'https://project.supabase.co/rest/v1/applications?on_conflict=user_id%2Cjob_id',
+      'https://project.supabase.co/rest/v1/applications?select=id&user_id=eq.user-id&job_id=eq.job-id&limit=1',
+      'https://project.supabase.co/functions/v1/queue-application',
+    ])
   })
 })

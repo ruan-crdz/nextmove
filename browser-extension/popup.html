@@ -13,10 +13,20 @@
         <span class="eyebrow">LINKEDIN</span>
         <h1>Leve esta vaga para sua busca</h1>
         <p id="status">Verificando a página aberta…</p>
-        <button id="send" type="button" disabled>Adicionar no NextMove <span aria-hidden="true">→</span></button>
+        <form id="login-form" class="login-form" hidden>
+          <label>Email<input id="email" type="email" autocomplete="username" required /></label>
+          <label>Senha<input id="password" type="password" autocomplete="current-password" required /></label>
+          <button type="submit">Entrar no NextMove <span aria-hidden="true">→</span></button>
+        </form>
+        <div id="account-view" hidden>
+          <p id="account-label" class="account-label"></p>
+          <button id="send" type="button" disabled>Adicionar à fila <span aria-hidden="true">→</span></button>
+          <button id="sign-out" class="secondary-button" type="button">Sair desta extensão</button>
+        </div>
       </section>
-      <footer>Apenas a URL pública da vaga é compartilhada. A análise e a inscrição ficam sob seu controle.</footer>
+      <footer>Apenas a URL pública da vaga é compartilhada. Nenhuma guia nova será aberta e nenhuma inscrição será enviada.</footer>
     </main>
-    <script type="module" src="popup.js"></script>
+    <script src="config.js"></script>
+    <script type="module" src="popup-v2.js"></script>
   </body>
 </html>

@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "NextMove Job Handoff",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Envie a URL da vaga do LinkedIn aberta para analisar no NextMove.",
-  "permissions": ["activeTab"],
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["https://dlxaervilgcsshbckidk.supabase.co/*"],
   "action": {
     "default_title": "Enviar vaga ao NextMove",
     "default_popup": "popup.html"
