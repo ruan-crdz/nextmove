@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Command, Compass, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, Check, Compass, ShieldCheck, Sparkles } from 'lucide-react'
 import './welcome.css'
 import './welcome-mobile.css'
 
@@ -12,8 +12,7 @@ export function WelcomePage({ loading = false, onSignUp, onLogIn }: WelcomePageP
   return <div className="welcome-page">
     <header className="welcome-nav">
       <a className="wordmark" href="#home" aria-label="NextMove, início">
-        <span className="wordmark-mark"><Command size={18} strokeWidth={2.5} /></span>
-        <span>NextMove</span>
+        <img className="wordmark-image" src={`${import.meta.env.BASE_URL}brand/nextmove-horizontal.png`} alt="NextMove" />
       </a>
       <div className="welcome-nav-actions">
         <span>Já tem uma conta?</span>

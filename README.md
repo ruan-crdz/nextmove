@@ -19,6 +19,10 @@ npm run dev
 
 Abra a URL local impressa pelo Vite. O frontend funciona sem credenciais em modo demo.
 
+## Instalar no dispositivo
+
+Com o site publicado em HTTPS, use **Instalar NextMove** no menu do Chrome/Edge. No iPhone ou iPad, abra o menu de compartilhamento do Safari e escolha **Adicionar à Tela de Início**. O app usa o ícone NextMove e abre em uma janela própria; a instalação não habilita uso offline.
+
 ## Comandos
 
 | Comando | Uso |

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDownWideNarrow, ArrowRight, Bell, Bookmark, BriefcaseBusiness, Check, ChevronDown, CircleAlert, CircleHelp, Clock3, Command, Compass, FileText, Filter, Flame, Globe2, KeyRound, Layers3, Link2, MapPin, MoreHorizontal, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { ArrowDownWideNarrow, ArrowRight, Bell, Bookmark, BriefcaseBusiness, Check, ChevronDown, CircleAlert, CircleHelp, Clock3, Compass, FileText, Filter, Flame, Globe2, KeyRound, Layers3, Link2, MapPin, MoreHorizontal, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { demoJobs, mapStoredJob, type Job } from './domain/jobs'
 import { AuthDialog } from './components/AuthDialog'
 import { WelcomePage } from './components/WelcomePage'
@@ -9,6 +9,7 @@ import type { ResumeProfile } from './domain/resume'
 import { linkedInJobUrl } from './domain/extensionImport'
 import { invokeAuthenticated, supabase } from './lib/supabase'
 import './components/auth.css'
+import './components/brand.css'
 
 type View = 'Vagas' | 'Fila' | 'Aprovações' | 'Candidaturas' | 'Currículo'
 
@@ -249,8 +250,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <a className="wordmark" href="#home" aria-label="NextMove, início">
-          <span className="wordmark-mark"><Command size={18} strokeWidth={2.5} /></span>
-          <span>NextMove</span>
+          <img className="wordmark-image" src={`${import.meta.env.BASE_URL}brand/nextmove-horizontal.png`} alt="NextMove" />
         </a>
         <nav className="top-nav" aria-label="Navegação principal">
           {navigation.map(({ label, icon: Icon }) => (

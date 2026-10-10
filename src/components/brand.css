@@ -1,0 +1,7 @@
+.wordmark-image {
+  display: block;
+  width: auto;
+  height: 38px;
+  max-width: min(190px, 38vw);
+  object-fit: contain;
+}
