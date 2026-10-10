@@ -39,17 +39,24 @@ Deno.serve(async (request: Request) => {
     }
     const session = await response.json()
     const requiredActions = Array.isArray(session.required_actions) ? session.required_actions : []
+    let approvalSync: { actionTypes: string[]; materialized: number; errors: string[] } | null = null
     if (session.status === 'failed') {
       await failApplication(admin, run, 'A sessão do agente falhou. Revise o erro e tente novamente.')
     } else if (requiredActions.length) {
-      await saveRequiredActions(admin, run, requiredActions)
+      approvalSync = await saveRequiredActions(admin, run, requiredActions)
     } else if (session.status === 'idle') {
       await ensureFinalReview(admin, run)
     } else {
       await admin.from('application_runs').update({ status: 'running', last_activity_at: new Date().toISOString() }).eq('id', run.id).eq('user_id', user.id)
       await admin.from('applications').update({ status: 'applying', updated_at: new Date().toISOString() }).eq('id', run.application_id).eq('user_id', user.id)
     }
-    sessions.push({ runId: run.id, applicationId: run.application_id, status: session.status, needsInput: requiredActions.length > 0 })
+    sessions.push({
+      runId: run.id,
+      applicationId: run.application_id,
+      status: session.status,
+      needsInput: requiredActions.length > 0,
+      ...(approvalSync ? { approvalSync } : {}),
+    })
   }
 
   const { count: pendingApprovals } = await admin.from('approval_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'pending')
@@ -57,14 +64,25 @@ Deno.serve(async (request: Request) => {
 })
 
 async function saveRequiredActions(admin: ReturnType<typeof createClient>, run: Record<string, string>, actions: unknown[]) {
+  const diagnostics = { actionTypes: [] as string[], materialized: 0, errors: [] as string[] }
   for (const value of actions) {
-    if (!isRecord(value)) continue
+    if (!isRecord(value)) {
+      diagnostics.actionTypes.push('unknown_shape')
+      diagnostics.errors.push('unrecognized_action_shape')
+      continue
+    }
+    const actionType = stringValue(value.type) ?? 'unknown'
+    diagnostics.actionTypes.push(actionType)
+    let writeError: { code?: string } | null = null
     if (value.type === 'function_call' && value.name === 'request_user_response') {
       const args = isRecord(value.arguments) ? value.arguments : {}
       const callId = stringValue(value.call_id)
-      if (!callId) continue
+      if (!callId) {
+        diagnostics.errors.push('function_call:missing_call_id')
+        continue
+      }
       const requestType = stringValue(args.request_type) ?? 'question'
-      await admin.from('approval_requests').upsert({
+      const { error } = await admin.from('approval_requests').upsert({
         user_id: run.user_id, application_id: run.application_id,
         question: stringValue(args.question) ?? 'O agente precisa de uma resposta para continuar.',
         suggested_answer: stringValue(args.suggested_answer),
@@ -73,13 +91,17 @@ async function saveRequiredActions(admin: ReturnType<typeof createClient>, run: 
         request_payload: { reason: stringValue(args.reason), sensitivity: stringValue(args.sensitivity), options: Array.isArray(args.options) ? args.options : [] },
         status: 'pending',
       }, { onConflict: 'openai_request_id' })
+      writeError = error
     } else if (value.type === 'computer_use_approval_request') {
       const request = isRecord(value.request) ? value.request : {}
       const requestId = stringValue(value.request_id)
-      if (!requestId) continue
+      if (!requestId) {
+        diagnostics.errors.push('computer_use_approval_request:missing_request_id')
+        continue
+      }
       const authentication = request.type === 'browser_authentication'
       const origin = stringValue(request.credential_origin) ?? stringValue(request.origin)
-      await admin.from('approval_requests').upsert({
+      const { error } = await admin.from('approval_requests').upsert({
         user_id: run.user_id, application_id: run.application_id,
         question: authentication ? 'O site pede autenticação. Confira o domínio antes de continuar.' : `O agente precisa acessar ${origin ?? 'um novo domínio'}.`,
         suggested_answer: null, classification: 'ALWAYS_APPROVE',
@@ -90,10 +112,19 @@ async function saveRequiredActions(admin: ReturnType<typeof createClient>, run: 
           : { origin, reason: stringValue(request.reason), browser_request_type: stringValue(request.type) },
         status: 'pending',
       }, { onConflict: 'openai_request_id' })
+      writeError = error
+    } else {
+      diagnostics.errors.push(`unsupported_action:${actionType}`)
+      continue
     }
+    if (writeError) diagnostics.errors.push(`${actionType}:${writeError.code ?? 'database_error'}`)
+    else diagnostics.materialized += 1
   }
-  await admin.from('application_runs').update({ status: 'needs_input', last_activity_at: new Date().toISOString() }).eq('id', run.id).eq('user_id', run.user_id)
-  await admin.from('applications').update({ status: 'needs_input', updated_at: new Date().toISOString() }).eq('id', run.application_id).eq('user_id', run.user_id)
+  const { error: runError } = await admin.from('application_runs').update({ status: 'needs_input', last_activity_at: new Date().toISOString() }).eq('id', run.id).eq('user_id', run.user_id)
+  const { error: applicationError } = await admin.from('applications').update({ status: 'needs_input', updated_at: new Date().toISOString() }).eq('id', run.application_id).eq('user_id', run.user_id)
+  if (runError) diagnostics.errors.push(`run_status:${runError.code ?? 'database_error'}`)
+  if (applicationError) diagnostics.errors.push(`application_status:${applicationError.code ?? 'database_error'}`)
+  return diagnostics
 }
 
 async function ensureFinalReview(admin: ReturnType<typeof createClient>, run: Record<string, string>) {

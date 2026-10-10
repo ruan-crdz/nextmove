@@ -29,10 +29,42 @@ export function ApprovalQueueView() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       await invokeAuthenticated('application-status')
-      const { data } = await supabase.from('approval_requests')
-        .select('id,application_id,question,suggested_answer,classification,status,request_type,request_payload,applications(job_id,jobs(title,company))')
+      const { data, error } = await supabase.from('approval_requests')
+        .select('id,application_id,question,suggested_answer,classification,status,request_type,request_payload')
         .eq('user_id', user.id).eq('status', 'pending').order('created_at', { ascending: true })
-      if (active && data) setApprovals(data as unknown as Approval[])
+      if (error) {
+        if (active) setMessage('Não foi possível carregar as aprovações. Atualize a tela e tente novamente.')
+        return
+      }
+      if (!data?.length) {
+        if (active) setApprovals([])
+        return
+      }
+      const applicationIds = [...new Set(data.map((approval) => approval.application_id))]
+      const { data: applications, error: applicationsError } = await supabase.from('applications')
+        .select('id,job_id').eq('user_id', user.id).in('id', applicationIds)
+      if (applicationsError) {
+        if (active) setMessage('Não foi possível carregar os dados das candidaturas pendentes.')
+        return
+      }
+      const jobIds = [...new Set((applications ?? []).map((application) => application.job_id))]
+      const { data: jobs, error: jobsError } = jobIds.length
+        ? await supabase.from('jobs').select('id,title,company').eq('user_id', user.id).in('id', jobIds)
+        : { data: [], error: null }
+      if (jobsError) {
+        if (active) setMessage('Não foi possível carregar os dados das vagas pendentes.')
+        return
+      }
+      const jobById = new Map((jobs ?? []).map((job) => [job.id, job]))
+      const applicationById = new Map((applications ?? []).map((application) => [application.id, application]))
+      const rows = data.map((approval) => {
+        const application = applicationById.get(approval.application_id)
+        return {
+          ...approval,
+          applications: application ? { job_id: application.job_id, jobs: jobById.get(application.job_id) } : undefined,
+        }
+      })
+      if (active) setApprovals(rows as unknown as Approval[])
     }
     void refresh()
     const interval = window.setInterval(() => { void refresh() }, 8000)
