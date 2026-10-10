@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, CircleAlert, LoaderCircle, ShieldCheck, X } from 'lucide-react'
 import { invokeAuthenticated, supabase } from '../lib/supabase'
 import './approvals.css'
+import './review-summary.css'
 
 type Approval = {
   id: string
@@ -11,7 +12,7 @@ type Approval = {
   classification: 'SAFE_AUTO' | 'RULE_REQUIRED' | 'ALWAYS_APPROVE'
   status: string
   request_type: string
-  request_payload: { origin?: string; reason?: string; fields?: { id: string; label: string; type: string; required: boolean }[]; options?: { id: string; label: string; field_ids?: string[] }[] }
+  request_payload: { origin?: string; reason?: string; review_summary?: string; fields?: { id: string; label: string; type: string; required: boolean }[]; options?: { id: string; label: string; field_ids?: string[] }[] }
   applications?: { job_id?: string; jobs?: { title?: string; company?: string } }
 }
 
@@ -28,43 +29,19 @@ export function ApprovalQueueView() {
       if (!supabase) return
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      await invokeAuthenticated('application-status')
-      const { data, error } = await supabase.from('approval_requests')
-        .select('id,application_id,question,suggested_answer,classification,status,request_type,request_payload')
-        .eq('user_id', user.id).eq('status', 'pending').order('created_at', { ascending: true })
+      const { data, error } = await invokeAuthenticated<{ error?: string; approvals?: Approval[] }>('application-status')
       if (error) {
         if (active) setMessage('Não foi possível carregar as aprovações. Atualize a tela e tente novamente.')
         return
       }
-      if (!data?.length) {
-        if (active) setApprovals([])
+      if (data?.error) {
+        if (active) setMessage('Não foi possível carregar as aprovações. Atualize a tela e tente novamente.')
         return
       }
-      const applicationIds = [...new Set(data.map((approval) => approval.application_id))]
-      const { data: applications, error: applicationsError } = await supabase.from('applications')
-        .select('id,job_id').eq('user_id', user.id).in('id', applicationIds)
-      if (applicationsError) {
-        if (active) setMessage('Não foi possível carregar os dados das candidaturas pendentes.')
-        return
+      if (active) {
+        setMessage('')
+        setApprovals(data?.approvals ?? [])
       }
-      const jobIds = [...new Set((applications ?? []).map((application) => application.job_id))]
-      const { data: jobs, error: jobsError } = jobIds.length
-        ? await supabase.from('jobs').select('id,title,company').eq('user_id', user.id).in('id', jobIds)
-        : { data: [], error: null }
-      if (jobsError) {
-        if (active) setMessage('Não foi possível carregar os dados das vagas pendentes.')
-        return
-      }
-      const jobById = new Map((jobs ?? []).map((job) => [job.id, job]))
-      const applicationById = new Map((applications ?? []).map((application) => [application.id, application]))
-      const rows = data.map((approval) => {
-        const application = applicationById.get(approval.application_id)
-        return {
-          ...approval,
-          applications: application ? { job_id: application.job_id, jobs: jobById.get(application.job_id) } : undefined,
-        }
-      })
-      if (active) setApprovals(rows as unknown as Approval[])
     }
     void refresh()
     const interval = window.setInterval(() => { void refresh() }, 8000)
@@ -113,6 +90,8 @@ export function ApprovalQueueView() {
         <div className="approval-card-top"><span className="approval-icon"><CircleAlert size={17} /></span><div><strong>{job?.title ?? 'Candidatura'}</strong><span>{job?.company ?? 'Empresa'} · {approval.request_type.replaceAll('_', ' ')}</span></div><span className={`approval-risk ${approval.classification.toLowerCase()}`}>{approval.classification === 'ALWAYS_APPROVE' ? 'Sempre confirmar' : 'Sua resposta'}</span></div>
         <h2>{approval.question}</h2>
         {origin && <p className="approval-origin">Domínio solicitado: <strong>{origin}</strong>{approval.request_payload.reason ? ` · ${approval.request_payload.reason}` : ''}</p>}
+        {finalReview && approval.request_payload.review_summary && <div className="approval-review-summary"><span>RESUMO DA CANDIDATURA</span><pre>{approval.request_payload.review_summary}</pre></div>}
+        {finalReview && !approval.request_payload.review_summary && <p className="approval-final-warning">Não há resumo textual salvo para revisar. Não autorize o envio; continuar só retoma a preparação.</p>}
         {approval.suggested_answer && !browserOrigin && !authentication && <p className="approval-suggestion">Sugestão baseada no currículo revisado: <strong>{approval.suggested_answer}</strong></p>}
         {authentication && requestFields.map((field) => <label className="approval-field" key={field.id}>{field.label}{field.required && ' *'}<input
           type={/password|code|token/i.test(`${field.id} ${field.type}`) ? 'password' : 'text'}

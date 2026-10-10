@@ -45,7 +45,7 @@ Deno.serve(async (request: Request) => {
     } else if (requiredActions.length) {
       approvalSync = await saveRequiredActions(admin, run, requiredActions)
     } else if (session.status === 'idle') {
-      await ensureFinalReview(admin, run)
+      await ensureFinalReview(admin, run, openAiKey)
     } else {
       await admin.from('application_runs').update({ status: 'running', last_activity_at: new Date().toISOString() }).eq('id', run.id).eq('user_id', user.id)
       await admin.from('applications').update({ status: 'applying', updated_at: new Date().toISOString() }).eq('id', run.application_id).eq('user_id', user.id)
@@ -59,8 +59,33 @@ Deno.serve(async (request: Request) => {
     })
   }
 
-  const { count: pendingApprovals } = await admin.from('approval_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'pending')
-  return json({ sessions, pendingApprovals: pendingApprovals ?? 0 }, 200)
+  const { data: pendingRows, error: pendingError } = await admin.from('approval_requests')
+    .select('id,application_id,question,suggested_answer,classification,status,request_type,request_payload')
+    .eq('user_id', user.id).eq('status', 'pending').order('created_at', { ascending: true }).limit(100)
+  if (pendingError) return json({ error: 'Could not load pending approvals' }, 500)
+
+  const applicationIds = [...new Set((pendingRows ?? []).map((approval) => approval.application_id))]
+  const { data: applications, error: applicationsError } = applicationIds.length
+    ? await admin.from('applications').select('id,job_id').eq('user_id', user.id).in('id', applicationIds)
+    : { data: [], error: null }
+  if (applicationsError) return json({ error: 'Could not load approval applications' }, 500)
+
+  const jobIds = [...new Set((applications ?? []).map((application) => application.job_id))]
+  const { data: jobs, error: jobsError } = jobIds.length
+    ? await admin.from('jobs').select('id,title,company').eq('user_id', user.id).in('id', jobIds)
+    : { data: [], error: null }
+  if (jobsError) return json({ error: 'Could not load approval jobs' }, 500)
+
+  const applicationById = new Map((applications ?? []).map((application) => [application.id, application]))
+  const jobById = new Map((jobs ?? []).map((job) => [job.id, job]))
+  const approvals = (pendingRows ?? []).map((approval) => {
+    const application = applicationById.get(approval.application_id)
+    return {
+      ...approval,
+      applications: application ? { job_id: application.job_id, jobs: jobById.get(application.job_id) ?? null } : null,
+    }
+  })
+  return json({ sessions, approvals, pendingApprovals: approvals.length }, 200)
 })
 
 async function saveRequiredActions(admin: ReturnType<typeof createClient>, run: Record<string, string>, actions: unknown[]) {
@@ -127,19 +152,52 @@ async function saveRequiredActions(admin: ReturnType<typeof createClient>, run: 
   return diagnostics
 }
 
-async function ensureFinalReview(admin: ReturnType<typeof createClient>, run: Record<string, string>) {
-  const { data: existing } = await admin.from('approval_requests').select('id').eq('user_id', run.user_id)
+async function ensureFinalReview(admin: ReturnType<typeof createClient>, run: Record<string, string>, openAiKey: string) {
+  const { data: existing } = await admin.from('approval_requests').select('id,request_payload').eq('user_id', run.user_id)
     .eq('application_id', run.application_id).eq('request_type', 'final_review').eq('status', 'pending').limit(1).maybeSingle()
+  const existingPayload = isRecord(existing?.request_payload) ? existing.request_payload : {}
+  let reviewSummary = typeof existingPayload.review_summary === 'string' ? existingPayload.review_summary : null
+  if (!reviewSummary) reviewSummary = await getLatestAgentMessage(openAiKey, run.openai_session_id)
   if (!existing) {
     await admin.from('approval_requests').insert({
       user_id: run.user_id, application_id: run.application_id,
-      question: 'O agente pausou. Revise a candidatura antes de decidir o próximo passo.',
+      question: reviewSummary
+        ? 'Revise o resumo da candidatura antes de decidir o próximo passo.'
+        : 'O agente pausou, mas não foi possível recuperar um resumo da candidatura.',
       suggested_answer: null, classification: 'ALWAYS_APPROVE', request_type: 'final_review', status: 'pending',
-      request_payload: { note: 'Session idle is not proof of submission or completion.' },
+      request_payload: { note: 'Session idle is not proof of submission or completion.', ...(reviewSummary ? { review_summary: reviewSummary } : {}) },
     })
+  } else if (reviewSummary && typeof existingPayload.review_summary !== 'string') {
+    await admin.from('approval_requests').update({
+      question: 'Revise o resumo da candidatura antes de decidir o próximo passo.',
+      request_payload: { ...existingPayload, review_summary: reviewSummary },
+    }).eq('id', existing.id).eq('user_id', run.user_id).eq('status', 'pending')
   }
   await admin.from('application_runs').update({ status: 'needs_input', last_activity_at: new Date().toISOString() }).eq('id', run.id).eq('user_id', run.user_id)
   await admin.from('applications').update({ status: 'needs_input', updated_at: new Date().toISOString() }).eq('id', run.application_id).eq('user_id', run.user_id)
+}
+
+async function getLatestAgentMessage(openAiKey: string, sessionId: string) {
+  try {
+    const response = await fetch(`https://api.openai.com/v1/agents/sessions/${encodeURIComponent(sessionId)}/items?order=asc&limit=100`, {
+      headers: { Authorization: `Bearer ${openAiKey}`, 'OpenAI-Beta': 'agents=v1' },
+    })
+    if (!response.ok) return null
+    const payload = await response.json()
+    const items = isRecord(payload) && Array.isArray(payload.data) ? payload.data : []
+    for (const item of [...items].reverse()) {
+      if (!isRecord(item) || (item.type !== 'agent_message' && item.type !== 'message')) continue
+      if (item.type === 'message' && item.role !== 'assistant') continue
+      if (typeof item.text === 'string' && item.text.trim()) return item.text.trim().slice(0, 12000)
+      if (Array.isArray(item.content)) {
+        const text = item.content.flatMap((part) => isRecord(part) && typeof part.text === 'string' ? [part.text] : []).join('\n').trim()
+        if (text) return text.slice(0, 12000)
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
 }
 
 async function failApplication(admin: ReturnType<typeof createClient>, run: Record<string, string>, reason: string) {

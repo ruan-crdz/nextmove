@@ -1,0 +1,26 @@
+.approval-review-summary {
+  margin: 14px 0;
+  padding: 12px;
+  border-left: 3px solid #5b8e6d;
+  background: #f4f6f1;
+}
+
+.approval-review-summary > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #58715d;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.approval-review-summary pre {
+  max-height: 280px;
+  margin: 0;
+  overflow: auto;
+  color: #454d46;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
