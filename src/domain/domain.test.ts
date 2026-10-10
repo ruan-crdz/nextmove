@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { classifyApproval } from './approvals'
 import { evidenceForApplication, validateSupportedEvidence } from './evidence'
 import { calculateMatch } from './matching'
-import { resumeProfileSchema } from './resume'
+import { normalizeLinkedInProfileUrl, resumeProfileSchema } from './resume'
 import { linkedInJobUrl } from './extensionImport'
 import { openAiOutputText, parseOpenAiOutput } from '../../supabase/functions/_shared/openai-response'
 
@@ -80,5 +80,14 @@ describe('OpenAI Responses API decoding', () => {
 
   it('rejects responses with no text instead of parsing undefined', () => {
     expect(() => parseOpenAiOutput({ output: [] })).toThrow(/did not contain structured output text/i)
+  })
+})
+
+describe('LinkedIn profile URL', () => {
+  it('normalizes public profile links and rejects unrelated or private links', () => {
+    expect(normalizeLinkedInProfileUrl('https://www.linkedin.com/in/ana-lima/?trk=profile')).toBe('https://www.linkedin.com/in/ana-lima')
+    expect(normalizeLinkedInProfileUrl('https://linkedin.com/jobs/view/123')).toBeNull()
+    expect(normalizeLinkedInProfileUrl('https://example.com/in/ana')).toBeNull()
+    expect(normalizeLinkedInProfileUrl('http://linkedin.com/in/ana')).toBeNull()
   })
 })

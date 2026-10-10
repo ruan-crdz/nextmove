@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, Check, FileText, LoaderCircle, Sparkles, Upload } from 'lucide-react'
-import { resumeProfileSchema, type ResumeProfile } from '../domain/resume'
+import { normalizeLinkedInProfileUrl, resumeProfileSchema, type ResumeProfile } from '../domain/resume'
 import { invokeAuthenticated, supabase } from '../lib/supabase'
 import './resume-import.css'
 import './resume-review.css'
+import './resume-linkedin.css'
 
 type ResumeImportViewProps = {
   userEmail: string | null
@@ -20,6 +21,8 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [saved, setSaved] = useState(false)
+  const [linkedinUrl, setLinkedinUrl] = useState('')
+  const [linkedinSaving, setLinkedinSaving] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -28,6 +31,8 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
       if (!supabase) return
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+      const { data: savedProfile } = await supabase.from('profiles').select('linkedin_url').eq('id', user.id).maybeSingle()
+      if (active) setLinkedinUrl(savedProfile?.linkedin_url ?? '')
       const { data } = await supabase.from('documents')
         .select('id,file_name,extracted_profile')
         .eq('user_id', user.id).eq('processing_status', 'review')
@@ -38,6 +43,7 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
         setProfile(parsed.data)
         setDocumentId(data.id)
         setFileName(data.file_name)
+        if (!savedProfile?.linkedin_url && parsed.data.linkedinUrl) setLinkedinUrl(parsed.data.linkedinUrl)
       }
     }
     void loadPendingReview()
@@ -95,6 +101,29 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
     }
   }
 
+  async function saveLinkedInUrl() {
+    if (!supabase) return
+    const normalizedUrl = normalizeLinkedInProfileUrl(linkedinUrl)
+    if (linkedinUrl.trim() && !normalizedUrl) {
+      setMessage('Use a URL pública no formato linkedin.com/in/seu-perfil.')
+      return
+    }
+    setLinkedinSaving(true)
+    setMessage('')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Sua sessão expirou. Entre novamente.')
+      const { error } = await supabase.from('profiles').upsert({ id: user.id, linkedin_url: normalizedUrl }, { onConflict: 'id' })
+      if (error) throw new Error('Não foi possível salvar o link do LinkedIn.')
+      setLinkedinUrl(normalizedUrl ?? '')
+      setMessage('Link público do LinkedIn salvo no seu perfil.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível salvar o link.')
+    } finally {
+      setLinkedinSaving(false)
+    }
+  }
+
   function update<K extends keyof ResumeProfile>(key: K, value: ResumeProfile[K]) {
     setProfile((current) => current ? { ...current, [key]: value } : current)
   }
@@ -109,7 +138,7 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
       const completeness = [profile.fullName, profile.headline, profile.summary, profile.experiences.length, profile.educations.length, profile.skills.length, profile.languages.length].filter(Boolean).length
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: user.id, full_name: clean(profile.fullName), headline: clean(profile.headline), summary: clean(profile.summary),
-        phone: clean(profile.phone), location: clean(profile.location), linkedin_url: safeUrl(profile.linkedinUrl),
+        phone: clean(profile.phone), location: clean(profile.location), linkedin_url: normalizeLinkedInProfileUrl(profile.linkedinUrl ?? ''),
         portfolio_url: safeUrl(profile.portfolioUrl), completeness: Math.round(completeness / 7 * 100),
       })
       if (profileError) throw new Error('Não foi possível salvar os dados básicos do perfil.')
@@ -208,6 +237,11 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
       <button className="quiet-button" onClick={onBack}><ArrowLeft size={15} /> Voltar</button>
       <div><span className="summary-caption">PERFIL PROFISSIONAL</span><h2>Importar currículo</h2><p>As informações só entram no seu perfil depois que você revisar e confirmar.</p></div>
     </div>
+    <section className="resume-linkedin-section">
+      <div><strong>Seu perfil no LinkedIn</strong><p>Salve o link público. Para importar experiências e skills, exporte seu perfil do LinkedIn em PDF e envie abaixo; não acessamos dados privados.</p></div>
+      <label className="resume-linkedin-field"><span>URL do perfil</span><input type="url" placeholder="https://www.linkedin.com/in/seu-perfil/" value={linkedinUrl} onChange={(event) => setLinkedinUrl(event.target.value)} aria-label="URL do seu perfil público do LinkedIn" /></label>
+      <button className="quiet-button" disabled={linkedinSaving} onClick={saveLinkedInUrl}>{linkedinSaving ? 'Salvando…' : 'Salvar link do LinkedIn'}</button>
+    </section>
     {!profile && <section className="resume-upload-section">
       <button className="resume-upload-target" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
         <span className="resume-upload-icon"><Upload size={19} /></span>
@@ -228,6 +262,7 @@ export function ResumeImportView({ userEmail, onBack, onProfileConfirmed }: Resu
           <label>Email da conta<input value={userEmail ?? ''} readOnly /></label>
           <label>Telefone<input value={profile.phone ?? ''} onChange={(event) => update('phone', event.target.value || null)} /></label>
           <label>Localização<input value={profile.location ?? ''} onChange={(event) => update('location', event.target.value || null)} /></label>
+          <label className="resume-linkedin-field">Perfil LinkedIn<input type="url" placeholder="https://www.linkedin.com/in/seu-perfil/" value={profile.linkedinUrl ?? ''} onChange={(event) => { update('linkedinUrl', event.target.value || null); setLinkedinUrl(event.target.value) }} /></label>
         </div>
         <label className="resume-long-field">Resumo profissional<textarea rows={4} value={profile.summary ?? ''} onChange={(event) => update('summary', event.target.value || null)} /></label>
         <label className="resume-long-field">Competências <span className="resume-field-hint">Uma por linha</span><textarea rows={4} value={profile.skills.map((skill) => skill.name).join('\n')} onChange={(event) => update('skills', event.target.value.split('\n').map((name) => name.trim()).filter(Boolean).map((name) => profile.skills.find((skill) => skill.name.toLowerCase() === name.toLowerCase()) ?? { name, proficiency: null, yearsExperience: null }))} /></label>

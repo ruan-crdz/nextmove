@@ -51,3 +51,16 @@ export const resumeProfileSchema = z.object({
 })
 
 export type ResumeProfile = z.infer<typeof resumeProfileSchema>
+
+export function normalizeLinkedInProfileUrl(value: string) {
+  if (!value.trim()) return null
+  try {
+    const url = new URL(value.trim())
+    if (url.protocol !== 'https:' || !/(^|\.)linkedin\.com$/i.test(url.hostname) || !/^\/(in|pub)\//.test(url.pathname)) return null
+    url.search = ''
+    url.hash = ''
+    return url.toString().replace(/\/$/, '')
+  } catch {
+    return null
+  }
+}

@@ -7,6 +7,7 @@
 - Chamadas do frontend às Edge Functions recuperam a sessão atual e enviam `Authorization: Bearer <access_token>` explicitamente. Se não houver sessão, a chamada é bloqueada no cliente com mensagem para entrar novamente.
 - `parse-resume` só baixa arquivos no diretório privado do usuário autenticado; o perfil extraído fica em estado `review` até confirmação explícita.
 - `discover-linkedin-jobs` só guarda URLs `/jobs/view/` do LinkedIn que estejam presentes nas citações de Web Search retornadas pela OpenAI. A extensão não injeta scripts, lê DOM, cookies ou endpoints privados.
+- URL pública de perfil LinkedIn é armazenada como referência declarada. OAuth/OIDC não é tratado como autorização para importar histórico; campos profissionais do LinkedIn só entram via PDF enviado pelo usuário ou texto que ele forneça explicitamente.
 - O demo não chama serviços externos e não envia candidaturas.
 - LinkedIn autenticado, cookies e credenciais de sites de emprego não são coletados.
 
