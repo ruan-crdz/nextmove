@@ -3,22 +3,27 @@ const status = document.querySelector('#status')
 const sendButton = document.querySelector('#send')
 let jobUrl = null
 
-function isLinkedInJobUrl(value) {
+function canonicalLinkedInJobUrl(value) {
   try {
     const url = new URL(value)
-    return url.protocol === 'https:' && /(^|\.)linkedin\.com$/i.test(url.hostname) && /\/jobs\/view\/\d+/.test(url.pathname)
+    if (url.protocol !== 'https:' || !/(^|\.)linkedin\.com$/i.test(url.hostname)) return null
+    const jobPath = url.pathname.match(/\/jobs\/view\/(\d+)/)
+    const searchResultId = url.pathname.includes('/jobs/search-results/') ? url.searchParams.get('currentJobId') : null
+    const jobId = jobPath?.[1] ?? (searchResultId && /^\d+$/.test(searchResultId) ? searchResultId : null)
+    return jobId ? `https://www.linkedin.com/jobs/view/${jobId}/` : null
   } catch {
-    return false
+    return null
   }
 }
 
 chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-  if (!tab?.url || !isLinkedInJobUrl(tab.url)) {
-    status.textContent = 'Abra uma página pública de vaga do LinkedIn para continuar.'
+  const canonicalUrl = tab?.url ? canonicalLinkedInJobUrl(tab.url) : null
+  if (!canonicalUrl) {
+    status.textContent = 'Abra uma vaga pública ou selecione uma vaga nos resultados do LinkedIn.'
     return
   }
-  jobUrl = tab.url
-  status.textContent = tab.title || new URL(jobUrl).pathname
+  jobUrl = canonicalUrl
+  status.textContent = `Vaga ${new URL(jobUrl).pathname.split('/').filter(Boolean).at(-1)}`
   sendButton.disabled = false
 })
 

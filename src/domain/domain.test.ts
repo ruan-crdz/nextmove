@@ -62,6 +62,8 @@ describe('resume extraction validation', () => {
 describe('browser extension handoff', () => {
   it('accepts public LinkedIn job URLs and rejects non-job or non-LinkedIn URLs', () => {
     expect(linkedInJobUrl('https://www.linkedin.com/jobs/view/123456789')).toBe('https://www.linkedin.com/jobs/view/123456789')
+    expect(linkedInJobUrl('https://www.linkedin.com/jobs/search-results/?currentJobId=4458633468&trackingId=private')).toBe('https://www.linkedin.com/jobs/view/4458633468')
+    expect(linkedInJobUrl('https://www.linkedin.com/jobs/search-results/?currentJobId=not-a-number')).toBeNull()
     expect(linkedInJobUrl('https://linkedin.com/jobs/search/?keywords=react')).toBeNull()
     expect(linkedInJobUrl('https://example.com/jobs/view/123456789')).toBeNull()
     expect(linkedInJobUrl('javascript:alert(1)')).toBeNull()
